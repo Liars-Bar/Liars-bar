@@ -143,6 +143,7 @@ export interface TableData {
   isOpen: boolean;
   tableCard: number;
   trunToPlay: number;
+  cardsOnTable: number; // count of encrypted cards placed on the table
 }
 
 export function useTable(tableIdString: string) {
@@ -170,6 +171,9 @@ export function useTable(tableIdString: string) {
   const [myCards, setMyCards] = useState<DecryptedCard[]>([]);
   const [isDecryptingCards, setIsDecryptingCards] = useState(false);
   const [decryptFailed, setDecryptFailed] = useState(false);
+
+  // Track last claim (who placed cards last)
+  const [lastClaimBy, setLastClaimBy] = useState<string | null>(null);
   const { signMessage } = useWallet();
 
   // Derive table PDA
@@ -270,6 +274,7 @@ export function useTable(tableIdString: string) {
           isOpen: table.isOpen,
           tableCard: table.tableCard,
           trunToPlay: table.trunToPlay,
+          cardsOnTable: Array.isArray(table.cardsOnTable) ? table.cardsOnTable.length : 0,
         };
         tableDataRef.current = newTableData;
         setTableData(newTableData);
@@ -967,6 +972,7 @@ export function useTable(tableIdString: string) {
 
         case "cardPlaced": {
           const playerAddr = event.data.player;
+          setLastClaimBy(playerAddr);
           addEventLog(
             "cardPlaced",
             `${shortenAddress(playerAddr)} placed a card`,
@@ -1115,6 +1121,7 @@ export function useTable(tableIdString: string) {
     isMyTurn,
     lastEvent,
     eventLog,
+    lastClaimBy,
 
     // Player state
     isPlayerInTable,

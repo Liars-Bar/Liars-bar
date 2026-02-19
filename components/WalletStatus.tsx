@@ -1,16 +1,13 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { LAMPORTS_PER_SOL } from "@solana/web3.js";
-import { useTable } from "@/lib/solana/useTable";
 
 export function WalletStatus() {
   const pathname = usePathname();
-  const router = useRouter();
-  const isOnGamePage = pathname?.startsWith("/game/");
   const isOnTablePage = pathname?.startsWith("/table/");
 
   // Don't render on table pages - account info is shown in the page header
@@ -18,24 +15,11 @@ export function WalletStatus() {
     return null;
   }
 
-  // Extract tableId from pathname if on game page
-  const tableId = useMemo(() => {
-    if (isOnGamePage && pathname) {
-      const parts = pathname.split("/");
-      return parts[2] || "";
-    }
-    return "";
-  }, [isOnGamePage, pathname]);
-
   const { connection } = useConnection();
   const { publicKey, connected, disconnect } = useWallet();
   const { setVisible } = useWalletModal();
   const [balance, setBalance] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [isLeaving, setIsLeaving] = useState(false);
-
-  // Use table hook only when on game page
-  const { quitTable, isPlayerInTable } = useTable(tableId);
 
   useEffect(() => {
     let isMounted = true;
@@ -96,74 +80,10 @@ export function WalletStatus() {
     return bal.toFixed(4);
   };
 
-  const handleLeave = async () => {
-    if (!isOnGamePage) return;
-
-    setIsLeaving(true);
-    try {
-      // Only call quitTable if the player is in the table
-      if (isPlayerInTable) {
-        await quitTable();
-      }
-      router.push("/");
-    } catch (error) {
-      console.error("Error leaving table:", error);
-      // Navigate anyway even if quit fails
-      router.push("/");
-    } finally {
-      setIsLeaving(false);
-    }
-  };
-
   return (
     <div className="fixed bottom-6 right-6 z-50">
       {connected && publicKey ? (
         <div className="flex flex-col items-stretch gap-2 w-44">
-          {/* Back to Home button - only on game pages */}
-          {isOnGamePage && (
-            <button
-              onClick={handleLeave}
-              disabled={isLeaving}
-              className="group flex items-center justify-center gap-2 h-10 px-4 rounded-xl bg-red-500/10 backdrop-blur-xl border border-red-500/20 hover:border-red-500/40 hover:bg-red-500/20 shadow-lg shadow-red-500/10 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isLeaving ? (
-                <svg className="animate-spin w-4 h-4 text-red-400" viewBox="0 0 24 24">
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                    fill="none"
-                  />
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                  />
-                </svg>
-              ) : (
-                <svg
-                  className="w-4 h-4 text-red-400 group-hover:text-red-300 transition-colors"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
-                  />
-                </svg>
-              )}
-              <span className="text-sm font-medium text-red-400 group-hover:text-red-300 transition-colors">
-                {isLeaving ? "Leaving..." : "Leave"}
-              </span>
-            </button>
-          )}
-
           {/* Wallet card */}
           <div className="flex flex-col bg-white/5 backdrop-blur-xl rounded-xl border border-white/10 shadow-lg shadow-black/20 overflow-hidden">
             {/* Balance section */}

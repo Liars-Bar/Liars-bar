@@ -109,22 +109,14 @@ export function useCreateTable(onTableCreated?: (tableId: string) => void) {
         PROGRAM_ID,
       );
 
-      console.log("Creating table with ID:", tableId.toString());
-      console.log("Table PDA:", tableAddress.toString());
-      console.log("Program ID:", PROGRAM_ID.toString());
-      console.log("Inco Lightning Program ID:", INCO_LIGHTNING_PROGRAM_ID.toString());
-      console.log("Signer:", publicKey.toString());
-
       // Check if program exists
       const programInfo = await connection.getAccountInfo(PROGRAM_ID);
       if (!programInfo) {
         throw new Error(`Program ${PROGRAM_ID.toString()} not found on this network. Is it deployed?`);
       }
-      console.log("Program found, executable:", programInfo.executable);
 
       // Check wallet balance
       const balance = await connection.getBalance(publicKey);
-      console.log("Wallet balance:", balance / 1e9, "SOL");
       if (balance < 0.01 * 1e9) {
         throw new Error("Insufficient SOL balance. Need at least 0.01 SOL.");
       }
@@ -148,8 +140,6 @@ export function useCreateTable(onTableCreated?: (tableId: string) => void) {
         } as any)
         .preInstructions([computeUnitLimit, computeUnitPrice]);
 
-      // Build the transaction manually
-      console.log("Building transaction...");
       const transaction: Transaction = await txBuilder.transaction();
 
       // Get latest blockhash
@@ -158,41 +148,26 @@ export function useCreateTable(onTableCreated?: (tableId: string) => void) {
       transaction.feePayer = publicKey;
 
       // Simulate first to get better errors
-      console.log("Simulating transaction...");
       try {
         const simResult = await connection.simulateTransaction(transaction);
-        console.log("Simulation result:", simResult);
         if (simResult.value.err) {
-          console.error("Simulation error:", simResult.value.err);
-          console.error("Simulation logs:", simResult.value.logs);
           throw new Error(`Simulation failed: ${JSON.stringify(simResult.value.err)}`);
         }
-        console.log("Simulation successful");
       } catch (simErr: any) {
-        console.error("Simulation failed:", simErr);
         throw simErr;
       }
 
       // Set up event listener before sending transaction
-      console.log("Setting up event listener...");
       let eventListenerId: number | null = null;
 
-      eventListenerId = program.addEventListener("liarsTableCreated", (event: any, slot, signature) => {
-        console.log("liarsTableCreated event received:", event.tableId.toString());
-        console.log("Event slot:", slot, "signature:", signature);
-      });
+      eventListenerId = program.addEventListener("liarsTableCreated", () => {});
 
-      // Send transaction using wallet adapter's sendTransaction
-      console.log("Sending transaction via wallet adapter...");
       const tx = await sendTransaction(transaction, connection, {
         skipPreflight: true, // Already simulated above
         maxRetries: 5,
       });
 
-      console.log("Transaction sent:", tx);
-
       // Wait for confirmation with a timeout fallback
-      console.log("Waiting for confirmation...");
       const confirmPromise = connection.confirmTransaction({
         signature: tx,
         blockhash,
@@ -206,8 +181,6 @@ export function useCreateTable(onTableCreated?: (tableId: string) => void) {
       const confirmation = await Promise.race([confirmPromise, timeoutPromise]);
 
       if (confirmation === null) {
-        // Timeout - check signature status manually
-        console.log("Confirmation timed out, checking signature status...");
         const status = await connection.getSignatureStatus(tx);
         if (status?.value?.err) {
           if (eventListenerId !== null) {
@@ -215,18 +188,14 @@ export function useCreateTable(onTableCreated?: (tableId: string) => void) {
           }
           throw new Error(`Transaction failed: ${JSON.stringify(status.value.err)}`);
         }
-        if (status?.value?.confirmationStatus === "confirmed" || status?.value?.confirmationStatus === "finalized") {
-          console.log("Transaction confirmed via status check!");
-        } else {
-          console.log("Transaction status:", status?.value?.confirmationStatus ?? "unknown", "- proceeding optimistically");
+        if (status?.value?.confirmationStatus !== "confirmed" && status?.value?.confirmationStatus !== "finalized") {
+          // Proceed optimistically
         }
       } else if (confirmation.value.err) {
         if (eventListenerId !== null) {
           program.removeEventListener(eventListenerId);
         }
         throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
-      } else {
-        console.log("Transaction confirmed!");
       }
 
       // Don't block on event - use the table ID we already know
@@ -236,7 +205,6 @@ export function useCreateTable(onTableCreated?: (tableId: string) => void) {
       }
 
       const createdTableId = tableId.toString();
-      console.log("Table created with ID:", createdTableId);
 
       // Call the callback if provided
       if (onTableCreatedRef.current) {
@@ -245,19 +213,6 @@ export function useCreateTable(onTableCreated?: (tableId: string) => void) {
 
       return { tableId, txSignature: tx };
     } catch (err: any) {
-      console.error("=== Error creating table ===");
-      console.error("Error:", err);
-
-      // Log program logs if available
-      if (err?.logs) {
-        console.error("Program logs:", err.logs);
-      }
-
-      // Log simulation response
-      if (err?.simulationResponse) {
-        console.error("Simulation response:", JSON.stringify(err.simulationResponse, null, 2));
-      }
-
       // Extract error message
       let errorMessage = "Failed to create table";
 
@@ -278,10 +233,6 @@ export function useCreateTable(onTableCreated?: (tableId: string) => void) {
       } else if (err?.message) {
         errorMessage = err.message;
       }
-
-      // Log additional details for debugging
-      console.error("Error name:", err?.name);
-      console.error("Error code:", err?.code);
 
       setError(errorMessage);
       return null;

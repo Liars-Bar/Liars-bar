@@ -56,8 +56,6 @@ function parseHandlesFromSimulation(
   const handles: bigint[] = [];
   const logs = simulation.logs || [];
 
-  console.log("=== Parsing simulation for handles ===");
-
   for (const log of logs) {
     // Pattern 1: Look for "result=<decimal_number>" in Inco event logs
     // e.g., "AS_EUINT128 Event: lhs=3, result=278485709450327982344214003977400276313"
@@ -68,9 +66,6 @@ function parseHandlesFromSimulation(
         const handleValue = BigInt(decimalStr);
         if (handleValue !== BigInt(0)) {
           handles.push(handleValue);
-          console.log(
-            `Found handle in result= log: ${handleValue.toString(16).padStart(32, "0")}`,
-          );
         }
       } catch (e) {
         // Skip invalid values
@@ -85,7 +80,6 @@ function parseHandlesFromSimulation(
       const handleValue = BigInt("0x" + handleHex);
       if (handleValue !== BigInt(0)) {
         handles.push(handleValue);
-        console.log(`Found potential handle in hex log: ${handleHex}`);
       }
     }
   }
@@ -98,8 +92,6 @@ function parseHandlesFromSimulation(
         base64Data,
         encoding === "base64" ? "base64" : "utf8",
       );
-      console.log("Return data buffer length:", buffer.length);
-
       // Each handle is 16 bytes (u128) in little-endian
       for (let i = 0; i + 16 <= buffer.length; i += 16) {
         let handleValue = BigInt(0);
@@ -108,13 +100,10 @@ function parseHandlesFromSimulation(
         }
         if (handleValue !== BigInt(0)) {
           handles.push(handleValue);
-          console.log(
-            `Found handle in return data: ${handleValue.toString(16)}`,
-          );
         }
       }
-    } catch (e) {
-      console.log("Failed to parse returnData:", e);
+    } catch {
+      // Failed to parse returnData
     }
   }
 
@@ -122,7 +111,6 @@ function parseHandlesFromSimulation(
   const uniqueHandles = [...new Set(handles.map((h) => h.toString()))].map(
     (s) => BigInt(s),
   );
-  console.log(`Total unique handles found: ${uniqueHandles.length}`);
   return uniqueHandles;
 }
 
@@ -372,13 +360,6 @@ export function useTable(tableIdString: string) {
           microLamports: 1000,
         });
 
-        console.log("Building joinTable transaction...");
-        console.log("Table ID:", tableId.toString());
-        console.log("Character ID:", characterId);
-        console.log("Table Address:", tableAddress.toString());
-        console.log("Player Address:", playerAddress.toString());
-        console.log("Signer:", publicKey.toString());
-
         const txBuilder = (program.methods as any)
           .joinTable(tableId, characterId)
           .accounts({
@@ -397,19 +378,14 @@ export function useTable(tableIdString: string) {
         transaction.feePayer = publicKey;
 
         // Simulate first to get better error messages
-        console.log("Simulating transaction...");
         try {
           const simResult = await connection.simulateTransaction(transaction);
           if (simResult.value.err) {
-            console.error("Simulation error:", simResult.value.err);
-            console.error("Simulation logs:", simResult.value.logs);
             throw new Error(
               `Simulation failed: ${JSON.stringify(simResult.value.err)}\nLogs: ${simResult.value.logs?.join("\n")}`,
             );
           }
-          console.log("Simulation successful");
         } catch (simErr: any) {
-          console.error("Simulation failed:", simErr);
           throw simErr;
         }
 
@@ -430,7 +406,6 @@ export function useTable(tableIdString: string) {
           "confirmed",
         );
 
-        console.log("Joined table! Tx:", tx);
         await fetchTable();
         return true;
       } catch (err: any) {
@@ -521,7 +496,6 @@ export function useTable(tableIdString: string) {
         "confirmed",
       );
 
-      console.log("Round started! Tx:", tx);
       await fetchTable();
       return true;
     } catch (err: any) {
@@ -578,8 +552,6 @@ export function useTable(tableIdString: string) {
         microLamports: 1000,
       });
 
-      console.log("Building quitTable transaction...");
-
       const txBuilder = (program.methods as any)
         .quitTable(tableId)
         .accounts({
@@ -611,7 +583,6 @@ export function useTable(tableIdString: string) {
         "confirmed",
       );
 
-      console.log("Quit table! Tx:", tx);
       return true;
     } catch (err: any) {
       console.error("Error quitting table:", err);
@@ -656,10 +627,7 @@ export function useTable(tableIdString: string) {
 
       // 1. Fetch player account to get encrypted card handles
       const player = await (program.account as any).player.fetch(playerAddress);
-      console.log("Player has", player.cards.length, "encrypted cards");
-
       if (!player.cards || player.cards.length === 0) {
-        console.log("No cards found in player account");
         return [];
       }
 
@@ -710,10 +678,7 @@ export function useTable(tableIdString: string) {
         );
       }
 
-      console.log("Card handles:", handles);
-
       // 3. Call grantCardAccess to allow our wallet to decrypt
-      console.log("Granting card access with", remainingAccounts.length, "allowance accounts...");
 
       const computeUnitLimit = ComputeBudgetProgram.setComputeUnitLimit({
         units: 400_000,
@@ -745,24 +710,16 @@ export function useTable(tableIdString: string) {
         maxRetries: 5,
       });
 
-      console.log("Grant card access tx:", grantSig);
-
       await connection.confirmTransaction(
         { signature: grantSig, blockhash, lastValidBlockHeight },
         "confirmed",
       );
 
-      console.log("Card access granted! Waiting for TEE to process...");
-
       // 4. Wait for TEE to process the allowances
       await new Promise((r) => setTimeout(r, 3000));
 
       // 5. Decrypt one card at a time, updating state after each
-      const shapes = ["Spades", "Hearts", "Diamonds", "Clubs"];
-      const values = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
-
       for (let i = 0; i < handles.length; i++) {
-        console.log(`Decrypting card ${i + 1}/${handles.length}...`);
         const result = await decrypt([handles[i].shape, handles[i].value], {
           address: publicKey,
           signMessage,
@@ -771,15 +728,10 @@ export function useTable(tableIdString: string) {
         const shapeIdx = parseInt(result.plaintexts[0]);
         const valueIdx = parseInt(result.plaintexts[1]);
 
-        console.log(
-          `Card ${i + 1}: ${values[valueIdx] ?? valueIdx} of ${shapes[shapeIdx] ?? shapeIdx}`,
-        );
-
         // Update state immediately so UI reveals this card
         setMyCards((prev) => [...prev, { shape: shapeIdx, value: valueIdx }]);
       }
 
-      console.log("All cards decrypted");
       return myCards;
     } catch (err: any) {
       console.error("Error decrypting cards:", err);
@@ -804,13 +756,11 @@ export function useTable(tableIdString: string) {
   // 3. Execute real transaction with allowance PDAs as remaining_accounts
   const shuffleCards = useCallback(async (): Promise<boolean> => {
     if (!publicKey || !anchorWallet || !sendTransaction) {
-      console.log("Cannot shuffle: wallet not connected");
       return false;
     }
 
     // Prevent multiple simultaneous shuffle attempts (use ref to avoid stale closure)
     if (isShufflingRef.current) {
-      console.log("Already shuffling, skipping...");
       return false;
     }
 
@@ -823,23 +773,7 @@ export function useTable(tableIdString: string) {
       });
       const program = new Program(IDL as any, provider);
 
-      // Log table account data before shuffling
       const tableAddress = getTableAddress();
-      const tableAccount = await (program.account as any).liarsTable.fetch(
-        tableAddress,
-      );
-      console.log("=== Table Account Data (before shuffle) ===");
-      console.log("Table ID:", tableAccount.tableId.toString());
-      console.log(
-        "Players:",
-        tableAccount.players.map((p: PublicKey) => p.toString()),
-      );
-      console.log("Is Open:", tableAccount.isOpen);
-      console.log("Table Card:", tableAccount.tableCard);
-      console.log("Turn to Play:", tableAccount.trunToPlay);
-      console.log("Shuffle Turn:", tableAccount.suffleTrun);
-      console.log("==========================================");
-
       const tableId = new BN(tableIdString);
 
       // Derive player PDA
@@ -861,7 +795,6 @@ export function useTable(tableIdString: string) {
       });
 
       // STEP 1: Simulate transaction to extract handles
-      console.log("=== STEP 1: Simulating to extract handles ===");
 
       const simulateTxBuilder = (program.methods as any)
         .suffleCards(tableId)
@@ -881,18 +814,13 @@ export function useTable(tableIdString: string) {
       simulateTx.feePayer = publicKey;
 
       const simulation = await connection.simulateTransaction(simulateTx);
-      console.log("Simulation logs:", simulation.value.logs);
 
       // STEP 2: Parse handles and derive allowance PDAs
-      console.log("=== STEP 2: Deriving allowance PDAs ===");
       const handles = parseHandlesFromSimulation(simulation.value);
 
       const remainingAccounts: AccountMeta[] = [];
       for (const handle of handles) {
         const allowancePDA = deriveAllowancePDAFromHandle(handle, publicKey);
-        console.log(
-          `Handle (dec): ${handle.toString()} -> (hex): ${handle.toString(16).padStart(32, "0")} -> PDA: ${allowancePDA.toString()}`,
-        );
         remainingAccounts.push({
           pubkey: allowancePDA,
           isSigner: false,
@@ -903,15 +831,6 @@ export function useTable(tableIdString: string) {
       // STEP 3: Execute real transaction
       // NOTE: We skip remaining_accounts because e_rand generates different values each call,
       // so the PDAs from simulation won't match the actual execution.
-      // The Rust program should either:
-      // - Not require allowance accounts during shuffle (handle allow separately)
-      // - Use a deterministic seed for randomness
-      console.log(
-        `=== STEP 3: Executing shuffle (without allowance accounts - see note) ===`,
-      );
-      console.log(
-        `(Skipping ${remainingAccounts.length} allowance accounts from simulation - random values differ per execution)`,
-      );
 
       const txBuilder = (program.methods as any)
         .suffleCards(tableId)
@@ -933,16 +852,12 @@ export function useTable(tableIdString: string) {
       transaction.recentBlockhash = blockhash;
       transaction.feePayer = publicKey;
 
-      console.log("Sending shuffle transaction with allowance accounts...");
-
       const tx = await sendTransaction(transaction, connection, {
         skipPreflight: true, // Skip preflight to speed up
         maxRetries: 5,
       });
 
-      console.log("Shuffle transaction sent:", tx);
-
-      // Use a longer timeout for confirmation
+      // Wait for confirmation
       const confirmation = await connection.confirmTransaction(
         {
           signature: tx,
@@ -955,59 +870,19 @@ export function useTable(tableIdString: string) {
       if (confirmation.value.err) {
         // Check if this is "not your turn" error (6002) - expected in multiplayer race conditions
         const errObj = confirmation.value.err as any;
-        console.error(
-          "Shuffle transaction failed with error:",
-          JSON.stringify(confirmation.value.err, null, 2),
-        );
-
-        // Try to get more details from the transaction
-        try {
-          const txDetails = await connection.getTransaction(tx, {
-            commitment: "confirmed",
-            maxSupportedTransactionVersion: 0,
-          });
-          console.error("Transaction logs:", txDetails?.meta?.logMessages);
-        } catch (e) {
-          console.error("Could not fetch transaction details:", e);
-        }
 
         if (errObj?.InstructionError?.[1]?.Custom === 6002) {
-          console.log(
-            "Another player already shuffled (race condition), ignoring...",
-          );
+          // Another player already shuffled (race condition), ignoring
         }
         return false;
       }
 
-      console.log("Cards shuffled! Tx:", tx);
       await fetchTable(false);
-
-      // Log raw encrypted card data after shuffle
-      const playerAccount = await (program.account as any).player.fetch(
-        playerAddress,
-      );
-      console.log("=== Raw Encrypted Card Data ===");
-      console.log("Player PDA:", playerAddress.toString());
-      console.log("Number of cards:", playerAccount.cards?.length || 0);
-      console.log("Raw cards data:", playerAccount.cards);
-      if (playerAccount.cards) {
-        playerAccount.cards.forEach((card: any, index: number) => {
-          console.log(`Card ${index}:`, {
-            shape: card.shape,
-            value: card.value,
-          });
-        });
-      }
-      console.log("===============================");
-
       return true;
     } catch (err: any) {
       console.error("Error shuffling cards:", err);
       // If block height exceeded, the tx might still go through
       if (err.name === "TransactionExpiredBlockheightExceededError") {
-        console.log(
-          "Transaction may have succeeded despite timeout, refetching table...",
-        );
         await fetchTable(false);
       }
       return false;
@@ -1049,7 +924,6 @@ export function useTable(tableIdString: string) {
   // Handle WebSocket events
   const handleEvent = useCallback(
     (event: GameEvent) => {
-      console.log("Received game event:", event);
       setLastEvent(event);
 
       // Check if this event is for our table
@@ -1160,7 +1034,6 @@ export function useTable(tableIdString: string) {
 
   // Handle account changes via WebSocket
   const handleAccountChange = useCallback(() => {
-    console.log("Table account changed, refetching...");
     fetchTable(false);
   }, [fetchTable]);
 

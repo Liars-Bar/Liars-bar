@@ -102,7 +102,6 @@ export function useTableSubscription({
           "confirmed"
         );
 
-        console.log("Subscribed to program logs, subscription ID:", subscriptionRef.current);
       } catch (err) {
         console.error("Error subscribing to logs:", err);
       }
@@ -134,7 +133,6 @@ export function useTableSubscription({
           "confirmed"
         );
 
-        console.log("Subscribed to account changes, subscription ID:", accountSubscriptionRef.current);
       } catch (err) {
         console.error("Error subscribing to account:", err);
       }

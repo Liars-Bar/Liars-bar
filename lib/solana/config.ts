@@ -6,25 +6,6 @@ export const PROGRAM_ID_STRING = "F618XAoLrCWU7vx5ccd9HB1x85ttjqWwb77FG4TSVWE6";
 export const INCO_LIGHTNING_PROGRAM_ID_STRING =
   "5sjEbPiqgZrYwR31ahR6Uk9wf5awoX61YGg7jExQSwaj"; // Replace with your actual Inco Lightning program ID
 
-// Lazy initialization to avoid errors on import
-let _programId: PublicKey | null = null;
-let _incoLightningProgramId: PublicKey | null = null;
-
-export const getProgramId = (): PublicKey => {
-  if (!_programId) {
-    _programId = new PublicKey(PROGRAM_ID_STRING);
-  }
-  return _programId;
-};
-
-export const getIncoLightningProgramId = (): PublicKey => {
-  if (!_incoLightningProgramId) {
-    _incoLightningProgramId = new PublicKey(INCO_LIGHTNING_PROGRAM_ID_STRING);
-  }
-  return _incoLightningProgramId;
-};
-
-// For backward compatibility
 export const PROGRAM_ID = new PublicKey(PROGRAM_ID_STRING);
 export const INCO_LIGHTNING_PROGRAM_ID = new PublicKey(
   INCO_LIGHTNING_PROGRAM_ID_STRING,

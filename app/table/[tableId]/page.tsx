@@ -440,18 +440,24 @@ export default function TablePage() {
 
           {/* Table Card — top left */}
           {tableData && gameState === "playing" && (
-            <div className="absolute top-4 left-4 z-30">
-              <div className="bg-white/5 backdrop-blur-xl rounded-2xl border border-white/10 p-3 flex items-center gap-3">
-                <div className="w-12 h-18 rounded-lg border-2 border-white/20 bg-white/10 flex flex-col items-center justify-center px-1 py-2">
-                  <span className="text-white font-bold text-sm">
-                    {["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"][tableData.tableCard] ?? "?"}
-                  </span>
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-white/40 text-[10px] uppercase tracking-wider">Table Card</span>
-                  <span className="text-white font-semibold text-sm">
-                    {["Ace", "2", "3", "4", "5", "6", "7", "8", "9", "10", "Jack", "Queen", "King"][tableData.tableCard] ?? "Unknown"}
-                  </span>
+            <div className="absolute top-6 left-6 z-30">
+              <div className="relative group">
+                {/* Glow behind the card */}
+                <div className="absolute -inset-1 bg-gradient-to-br from-amber-500/20 to-orange-500/20 rounded-2xl blur-lg opacity-60 group-hover:opacity-100 transition-opacity duration-500" />
+                <div className="relative bg-gradient-to-br from-white/10 to-white/[0.03] backdrop-blur-xl rounded-2xl border border-white/15 p-4 flex items-center gap-4">
+                  {/* Card visual */}
+                  <div className="w-14 h-20 rounded-xl bg-gradient-to-br from-amber-400/90 to-orange-500/90 flex flex-col items-center justify-center shadow-lg shadow-amber-500/20 border border-amber-300/30">
+                    <span className="text-white font-black text-xl drop-shadow-md">
+                      {["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"][tableData.tableCard] ?? "?"}
+                    </span>
+                  </div>
+                  {/* Label */}
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-white/40 text-[10px] uppercase tracking-widest font-medium">Table Card</span>
+                    <span className="text-white font-bold text-base">
+                      {["Ace", "2", "3", "4", "5", "6", "7", "8", "9", "10", "Jack", "Queen", "King"][tableData.tableCard] ?? "Unknown"}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -485,21 +491,21 @@ export default function TablePage() {
 
           {/* Shuffle Button - Only shown to the player whose turn it is to shuffle */}
           {shouldShowShuffleButton && (
-            <div className="absolute bottom-32 left-1/2 -translate-x-1/2 z-30">
+            <div className="absolute top-[90%] -translate-y-1/2 inset-x-0 flex justify-center z-30">
               <button
                 onClick={shuffleCards}
                 disabled={isShuffling}
-                className="px-8 py-4 bg-gradient-to-r from-purple-500 to-blue-500 text-white font-semibold rounded-2xl hover:from-purple-600 hover:to-blue-600 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-3 shadow-lg shadow-purple-500/25"
+                className="group relative px-10 py-4 bg-white/5 backdrop-blur-xl text-white font-semibold rounded-full border border-white/20 hover:border-white/40 hover:bg-white/10 transition-all duration-300 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-3 shadow-[0_0_30px_rgba(255,255,255,0.06)]"
               >
                 {isShuffling ? (
                   <>
-                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Shuffling...
+                    <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                    <span className="tracking-wide text-sm uppercase">Shuffling...</span>
                   </>
                 ) : (
                   <>
-                    <span className="text-xl">🎴</span>
-                    Shuffle Cards
+                    <span className="text-lg transition-transform duration-300 group-hover:rotate-12">🎴</span>
+                    <span className="tracking-wide text-sm uppercase">Shuffle Cards</span>
                   </>
                 )}
               </button>
@@ -558,7 +564,7 @@ export default function TablePage() {
 
           {/* Selected cards count */}
           {selectedCardIndices.length > 0 && (
-            <div className="absolute bottom-32 left-1/2 -translate-x-1/2 z-30">
+            <div className="absolute bottom-[7.5rem] left-1/2 -translate-x-1/2 z-30">
               <div className="px-4 py-2 bg-yellow-500/10 backdrop-blur-xl rounded-full border border-yellow-500/30">
                 <span className="text-yellow-400 text-sm font-medium">
                   {selectedCardIndices.length} card{selectedCardIndices.length > 1 ? "s" : ""} selected

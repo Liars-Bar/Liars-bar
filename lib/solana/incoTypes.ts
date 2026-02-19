@@ -60,7 +60,8 @@ export interface EncryptedCard {
  * ```
  */
 export function euint128ToHandle(euint: Euint128): string {
-  return euint[0].toString("hex").padStart(32, "0");
+  // Add 0x prefix for BigInt conversion compatibility
+  return "0x" + euint[0].toString("hex").padStart(32, "0");
 }
 
 /**

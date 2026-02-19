@@ -5,7 +5,7 @@
  * IDL can be found at `target/idl/liars_bar_dapp.json`.
  */
 export type LiarsBarDapp = {
-  "address": "6wYATvBh3f8gPZGTTeRJ8Qs38S1XcjJCybHyfBCDRFhg",
+  "address": "F618XAoLrCWU7vx5ccd9HB1x85ttjqWwb77FG4TSVWE6",
   "metadata": {
     "name": "liarsBarDapp",
     "version": "0.1.0",
@@ -60,6 +60,66 @@ export type LiarsBarDapp = {
         {
           "name": "incoLightningProgram",
           "address": "5sjEbPiqgZrYwR31ahR6Uk9wf5awoX61YGg7jExQSwaj"
+        }
+      ],
+      "args": [
+        {
+          "name": "tableId",
+          "type": "u128"
+        }
+      ]
+    },
+    {
+      "name": "grantCardAccess",
+      "discriminator": [
+        139,
+        60,
+        161,
+        217,
+        27,
+        25,
+        197,
+        92
+      ],
+      "accounts": [
+        {
+          "name": "signer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "player",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  108,
+                  97,
+                  121,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "tableId"
+              },
+              {
+                "kind": "account",
+                "path": "signer"
+              }
+            ]
+          }
+        },
+        {
+          "name": "incoLightningProgram",
+          "address": "5sjEbPiqgZrYwR31ahR6Uk9wf5awoX61YGg7jExQSwaj"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
         }
       ],
       "args": [
@@ -477,12 +537,12 @@ export type LiarsBarDapp = {
           }
         },
         {
-          "name": "systemProgram",
-          "address": "11111111111111111111111111111111"
-        },
-        {
           "name": "incoLightningProgram",
           "address": "5sjEbPiqgZrYwR31ahR6Uk9wf5awoX61YGg7jExQSwaj"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
         }
       ],
       "args": [
@@ -931,7 +991,7 @@ export type LiarsBarDapp = {
 };
 
 export const IDL: LiarsBarDapp = {
-  "address": "6wYATvBh3f8gPZGTTeRJ8Qs38S1XcjJCybHyfBCDRFhg",
+  "address": "F618XAoLrCWU7vx5ccd9HB1x85ttjqWwb77FG4TSVWE6",
   "metadata": {
     "name": "liarsBarDapp",
     "version": "0.1.0",
@@ -959,6 +1019,29 @@ export const IDL: LiarsBarDapp = {
           "name": "incoLightningProgram",
           "address": "5sjEbPiqgZrYwR31ahR6Uk9wf5awoX61YGg7jExQSwaj"
         }
+      ],
+      "args": [{ "name": "tableId", "type": "u128" }]
+    },
+    {
+      "name": "grantCardAccess",
+      "discriminator": [139, 60, 161, 217, 27, 25, 197, 92],
+      "accounts": [
+        { "name": "signer", "writable": true, "signer": true },
+        {
+          "name": "player",
+          "pda": {
+            "seeds": [
+              { "kind": "const", "value": [112, 108, 97, 121, 101, 114] },
+              { "kind": "arg", "path": "tableId" },
+              { "kind": "account", "path": "signer" }
+            ]
+          }
+        },
+        {
+          "name": "incoLightningProgram",
+          "address": "5sjEbPiqgZrYwR31ahR6Uk9wf5awoX61YGg7jExQSwaj"
+        },
+        { "name": "systemProgram", "address": "11111111111111111111111111111111" }
       ],
       "args": [{ "name": "tableId", "type": "u128" }]
     },
@@ -1130,11 +1213,11 @@ export const IDL: LiarsBarDapp = {
             ]
           }
         },
-        { "name": "systemProgram", "address": "11111111111111111111111111111111" },
         {
           "name": "incoLightningProgram",
           "address": "5sjEbPiqgZrYwR31ahR6Uk9wf5awoX61YGg7jExQSwaj"
-        }
+        },
+        { "name": "systemProgram", "address": "11111111111111111111111111111111" }
       ],
       "args": [{ "name": "tableId", "type": "u128" }]
     }

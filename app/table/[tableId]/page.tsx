@@ -50,6 +50,7 @@ export default function TablePage() {
   const [selectedCharacter, setSelectedCharacter] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [balance, setBalance] = useState<number | null>(null);
+  const [selectedCardIndices, setSelectedCardIndices] = useState<number[]>([]);
 
   const handleCopyTableId = async () => {
     await navigator.clipboard.writeText(tableId);
@@ -71,6 +72,16 @@ export default function TablePage() {
     gameState,
     quitTable,
     isQuitting,
+    // Shuffle
+    shouldShowShuffleButton,
+    shuffleCards,
+    isShuffling,
+    // Cards
+    myCards,
+    myEncryptedCards,
+    decryptMyCards,
+    isDecryptingCards,
+    decryptFailed,
   } = useTable(tableId);
 
   // Fetch wallet balance
@@ -128,6 +139,27 @@ export default function TablePage() {
     if (!selectedCharacter) return;
     const success = await joinTable(selectedCharacter);
     if (success) setSelectedCharacter(null);
+  };
+
+  // Auto-decrypt cards when game is playing and we have encrypted cards (once only)
+  useEffect(() => {
+    if (gameState === "playing" && myEncryptedCards.length > 0 && myCards.length === 0 && !isDecryptingCards && !decryptFailed) {
+      decryptMyCards();
+    }
+  }, [gameState, myEncryptedCards.length, myCards.length, isDecryptingCards, decryptFailed, decryptMyCards]);
+
+  // Toggle card selection
+  const handleCardClick = (index: number) => {
+    setSelectedCardIndices(prev => {
+      if (prev.includes(index)) {
+        return prev.filter(i => i !== index);
+      }
+      // Limit to 3 cards selected at a time
+      if (prev.length >= 3) {
+        return [...prev.slice(1), index];
+      }
+      return [...prev, index];
+    });
   };
 
   const handleStartGame = async () => {
@@ -406,6 +438,25 @@ export default function TablePage() {
             <PokerTable />
           </div>
 
+          {/* Table Card — top left */}
+          {tableData && gameState === "playing" && (
+            <div className="absolute top-4 left-4 z-30">
+              <div className="bg-white/5 backdrop-blur-xl rounded-2xl border border-white/10 p-3 flex items-center gap-3">
+                <div className="w-12 h-18 rounded-lg border-2 border-white/20 bg-white/10 flex flex-col items-center justify-center px-1 py-2">
+                  <span className="text-white font-bold text-sm">
+                    {["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"][tableData.tableCard] ?? "?"}
+                  </span>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-white/40 text-[10px] uppercase tracking-wider">Table Card</span>
+                  <span className="text-white font-semibold text-sm">
+                    {["Ace", "2", "3", "4", "5", "6", "7", "8", "9", "10", "Jack", "Queen", "King"][tableData.tableCard] ?? "Unknown"}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Players */}
           {playersWithPositions.map((player) => (
             <div
@@ -431,6 +482,90 @@ export default function TablePage() {
               </div>
             </div>
           ))}
+
+          {/* Shuffle Button - Only shown to the player whose turn it is to shuffle */}
+          {shouldShowShuffleButton && (
+            <div className="absolute bottom-32 left-1/2 -translate-x-1/2 z-30">
+              <button
+                onClick={shuffleCards}
+                disabled={isShuffling}
+                className="px-8 py-4 bg-gradient-to-r from-purple-500 to-blue-500 text-white font-semibold rounded-2xl hover:from-purple-600 hover:to-blue-600 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-3 shadow-lg shadow-purple-500/25"
+              >
+                {isShuffling ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Shuffling...
+                  </>
+                ) : (
+                  <>
+                    <span className="text-xl">🎴</span>
+                    Shuffle Cards
+                  </>
+                )}
+              </button>
+            </div>
+          )}
+
+          {/* Player's Cards */}
+          {myEncryptedCards.length > 0 && (
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 flex items-end gap-3">
+              {myEncryptedCards.map((_, index) => {
+                const card = myCards[index]; // undefined if not yet decrypted
+                const suitSymbols = ["♠", "♥", "♦", "♣"];
+                const suitColors = ["text-white", "text-red-500", "text-red-500", "text-white"];
+                const valueLabels = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
+                const isSelected = selectedCardIndices.includes(index);
+
+                if (card) {
+                  // Decrypted — show face
+                  return (
+                    <button
+                      key={index}
+                      onClick={() => handleCardClick(index)}
+                      className={`relative w-16 h-24 rounded-xl border-2 transition-all duration-300 flex flex-col items-center justify-center gap-1 cursor-pointer hover:scale-105 animate-[flipIn_0.4s_ease-out] ${
+                        isSelected
+                          ? "border-yellow-400 bg-white/20 -translate-y-4 shadow-lg shadow-yellow-400/20"
+                          : "border-white/20 bg-white/10 backdrop-blur-xl hover:border-white/40"
+                      }`}
+                    >
+                      <span className={`text-lg font-bold ${suitColors[card.shape]}`}>
+                        {valueLabels[card.value] ?? card.value}
+                      </span>
+                      <span className={`text-xl ${suitColors[card.shape]}`}>
+                        {suitSymbols[card.shape]}
+                      </span>
+                    </button>
+                  );
+                }
+
+                // Not yet decrypted — show card back
+                const isNextToDecrypt = index === myCards.length && isDecryptingCards;
+                return (
+                  <div
+                    key={index}
+                    className={`w-16 h-24 rounded-xl border-2 border-white/10 bg-gradient-to-br from-indigo-900/60 to-purple-900/60 backdrop-blur-xl flex items-center justify-center transition-all duration-300 ${
+                      isNextToDecrypt ? "animate-pulse border-purple-400/50" : ""
+                    }`}
+                  >
+                    <div className="w-10 h-16 rounded-md border border-white/10 bg-gradient-to-br from-purple-800/40 to-indigo-800/40 flex items-center justify-center">
+                      <span className="text-white/15 text-lg">♠</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Selected cards count */}
+          {selectedCardIndices.length > 0 && (
+            <div className="absolute bottom-32 left-1/2 -translate-x-1/2 z-30">
+              <div className="px-4 py-2 bg-yellow-500/10 backdrop-blur-xl rounded-full border border-yellow-500/30">
+                <span className="text-yellow-400 text-sm font-medium">
+                  {selectedCardIndices.length} card{selectedCardIndices.length > 1 ? "s" : ""} selected
+                </span>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

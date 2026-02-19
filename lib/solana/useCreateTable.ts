@@ -177,59 +177,66 @@ export function useCreateTable(onTableCreated?: (tableId: string) => void) {
       console.log("Setting up event listener...");
       let eventListenerId: number | null = null;
 
-      const eventPromise = new Promise<string>((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          if (eventListenerId !== null) {
-            program.removeEventListener(eventListenerId);
-          }
-          reject(new Error("Timeout waiting for table creation event"));
-        }, 60000); // 60 second timeout
-
-        eventListenerId = program.addEventListener("liarsTableCreated", (event: any, slot, signature) => {
-          console.log("liarsTableCreated event received:", event.tableId.toString());
-          console.log("Event slot:", slot);
-          console.log("Event signature:", signature);
-
-          // Check if this is our table
-          if (event.tableId.toString() === tableId.toString()) {
-            clearTimeout(timeout);
-            if (eventListenerId !== null) {
-              program.removeEventListener(eventListenerId);
-            }
-            resolve(event.tableId.toString());
-          }
-        });
+      eventListenerId = program.addEventListener("liarsTableCreated", (event: any, slot, signature) => {
+        console.log("liarsTableCreated event received:", event.tableId.toString());
+        console.log("Event slot:", slot, "signature:", signature);
       });
 
       // Send transaction using wallet adapter's sendTransaction
       console.log("Sending transaction via wallet adapter...");
       const tx = await sendTransaction(transaction, connection, {
-        skipPreflight: false,
-        maxRetries: 3,
+        skipPreflight: true, // Already simulated above
+        maxRetries: 5,
       });
 
       console.log("Transaction sent:", tx);
 
-      // Wait for confirmation
+      // Wait for confirmation with a timeout fallback
       console.log("Waiting for confirmation...");
-      const confirmation = await connection.confirmTransaction({
+      const confirmPromise = connection.confirmTransaction({
         signature: tx,
         blockhash,
         lastValidBlockHeight,
       }, "confirmed");
 
-      if (confirmation.value.err) {
+      const timeoutPromise = new Promise<null>((resolve) =>
+        setTimeout(() => resolve(null), 30000)
+      );
+
+      const confirmation = await Promise.race([confirmPromise, timeoutPromise]);
+
+      if (confirmation === null) {
+        // Timeout - check signature status manually
+        console.log("Confirmation timed out, checking signature status...");
+        const status = await connection.getSignatureStatus(tx);
+        if (status?.value?.err) {
+          if (eventListenerId !== null) {
+            program.removeEventListener(eventListenerId);
+          }
+          throw new Error(`Transaction failed: ${JSON.stringify(status.value.err)}`);
+        }
+        if (status?.value?.confirmationStatus === "confirmed" || status?.value?.confirmationStatus === "finalized") {
+          console.log("Transaction confirmed via status check!");
+        } else {
+          console.log("Transaction status:", status?.value?.confirmationStatus ?? "unknown", "- proceeding optimistically");
+        }
+      } else if (confirmation.value.err) {
         if (eventListenerId !== null) {
           program.removeEventListener(eventListenerId);
         }
         throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+      } else {
+        console.log("Transaction confirmed!");
       }
 
-      console.log("Transaction confirmed! Waiting for event...");
+      // Don't block on event - use the table ID we already know
+      // Clean up event listener
+      if (eventListenerId !== null) {
+        program.removeEventListener(eventListenerId);
+      }
 
-      // Wait for the event
-      const createdTableId = await eventPromise;
-      console.log("Table created! Event confirmed for table:", createdTableId);
+      const createdTableId = tableId.toString();
+      console.log("Table created with ID:", createdTableId);
 
       // Call the callback if provided
       if (onTableCreatedRef.current) {

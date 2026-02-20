@@ -9,9 +9,10 @@ import { LAMPORTS_PER_SOL } from "@solana/web3.js";
 export function WalletStatus() {
   const pathname = usePathname();
   const isOnTablePage = pathname?.startsWith("/table/");
+  const isOnRetroPage = pathname?.startsWith("/retro");
 
-  // Don't render on table pages - account info is shown in the page header
-  if (isOnTablePage) {
+  // Don't render on table pages or retro pages - they have their own wallet UI
+  if (isOnTablePage || isOnRetroPage) {
     return null;
   }
 

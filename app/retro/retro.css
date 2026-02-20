@@ -209,6 +209,8 @@
   border: 3px solid #444;
   width: 56px;
   height: 80px;
+  min-width: 56px;
+  min-height: 80px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -220,6 +222,7 @@
   image-rendering: pixelated;
   position: relative;
   box-shadow: 3px 3px 0 #222;
+  flex-shrink: 0;
 }
 .retro-card-face:hover {
   transform: translateY(-4px);
@@ -240,32 +243,197 @@
   border: 3px solid #4a90d9;
   width: 56px;
   height: 80px;
+  min-width: 56px;
+  min-height: 80px;
   display: flex;
   align-items: center;
   justify-content: center;
   box-shadow: 3px 3px 0 #222;
   image-rendering: pixelated;
+  flex-shrink: 0;
 }
 
-/* Retro Table (top-down 2D view) */
-.retro-table {
-  background: #1a472a;
-  border: 6px solid #5c3a1e;
-  border-radius: 50%;
-  box-shadow:
-    inset 0 0 40px rgba(0, 0, 0, 0.5),
-    8px 8px 0 #2a1a0e,
-    0 0 30px rgba(26, 71, 42, 0.3);
+/* Retro Table (top-down 2D view) — layered pixel art */
+.retro-table-outer {
   position: relative;
   image-rendering: pixelated;
 }
-.retro-table::before {
+
+/* Floor shadow under the table */
+.retro-table-shadow {
+  position: absolute;
+  inset: -6px -4px -10px -4px;
+  border-radius: 48% 48% 46% 46%;
+  background: rgba(0, 0, 0, 0.5);
+  filter: blur(12px);
+  z-index: 0;
+}
+
+/* Outer wood rim */
+.retro-table-wood {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  border-radius: 48%;
+  background:
+    repeating-linear-gradient(
+      0deg,
+      #5c3a1e 0px, #5c3a1e 3px,
+      #4a2e16 3px, #4a2e16 6px
+    );
+  border: 4px solid #3a200e;
+  box-shadow:
+    inset 0 2px 0 #7a5230,
+    inset 0 -2px 0 #2a1a0e,
+    6px 6px 0 #1a0e06,
+    0 0 40px rgba(92, 58, 30, 0.25);
+}
+
+/* Inner wood bevel */
+.retro-table-bevel {
+  position: absolute;
+  inset: 6px;
+  border-radius: 48%;
+  background: linear-gradient(180deg, #6b4226 0%, #4a2e16 40%, #3a200e 100%);
+  border: 3px solid #2a1a0e;
+  box-shadow:
+    inset 0 2px 0 #8b6240,
+    inset 0 -2px 0 #1a0e06;
+}
+
+/* Brass/gold trim ring */
+.retro-table-trim {
+  position: absolute;
+  inset: 5px;
+  border-radius: 48%;
+  border: 2px solid #b8860b;
+  box-shadow:
+    0 0 6px #b8860b40,
+    inset 0 0 6px #b8860b20;
+  pointer-events: none;
+}
+
+/* Green felt surface */
+.retro-table-felt {
+  position: absolute;
+  inset: 12px;
+  border-radius: 46%;
+  background: #1a5c2e;
+  border: 3px solid #0f3d1c;
+  box-shadow:
+    inset 0 0 30px rgba(0, 0, 0, 0.5),
+    inset 0 0 60px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+}
+
+/* Felt crosshatch texture */
+.retro-table-felt-texture {
+  position: absolute;
+  inset: 0;
+  border-radius: 46%;
+  opacity: 0.12;
+  background:
+    repeating-linear-gradient(
+      45deg,
+      transparent 0px, transparent 4px,
+      rgba(0, 80, 0, 0.8) 4px, rgba(0, 80, 0, 0.8) 5px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      transparent 0px, transparent 4px,
+      rgba(0, 80, 0, 0.8) 4px, rgba(0, 80, 0, 0.8) 5px
+    );
+  pointer-events: none;
+}
+
+/* Inner dashed betting line */
+.retro-table-betting-line {
+  position: absolute;
+  inset: 20px;
+  border-radius: 44%;
+  border: 2px dashed #2d8b4a;
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+/* Center diamond emblem */
+.retro-table-emblem {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.retro-table-emblem-diamond {
+  width: 60px;
+  height: 60px;
+  transform: rotate(45deg);
+  border: 2px solid #2d8b4a;
+  opacity: 0.2;
+  position: relative;
+}
+.retro-table-emblem-diamond::before {
   content: "";
   position: absolute;
-  inset: 8px;
+  inset: 6px;
+  border: 1px solid #2d8b4a;
+}
+
+/* Corner chip markers */
+.retro-table-chip {
+  position: absolute;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  border: 2px dashed #2d6b3f;
+  border: 2px solid #b8860b;
+  background: #2a1a0e;
+  box-shadow: 0 0 4px #b8860b40;
+}
+
+/* Warm overhead lamp glow on table */
+.retro-table-glow {
+  position: absolute;
+  top: 20%;
+  left: 30%;
+  width: 40%;
+  height: 30%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(255, 200, 80, 0.06) 0%, transparent 70%);
   pointer-events: none;
+}
+
+/* Felt edge vignette */
+.retro-table-vignette {
+  position: absolute;
+  inset: 0;
+  border-radius: 46%;
+  box-shadow: inset 0 0 50px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+
+/* Player seat marker */
+.retro-seat {
+  position: absolute;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transform: translate(-50%, -50%);
+}
+.retro-seat-ring {
+  position: absolute;
+  inset: -4px;
+  border-radius: 4px;
+  border: 2px solid transparent;
+  pointer-events: none;
+  transition: border-color 0.3s;
+}
+.retro-seat-active .retro-seat-ring {
+  border-color: #fbbf24;
+  box-shadow: 0 0 10px #fbbf2440;
+  animation: blink-anim 1.2s step-end infinite;
 }
 
 /* Blinking Cursor */
@@ -384,14 +552,25 @@
 
 /* Retro Scrollbar */
 .retro-scroll::-webkit-scrollbar {
-  width: 8px;
+  width: 6px;
+  height: 6px;
 }
 .retro-scroll::-webkit-scrollbar-track {
   background: #0a0a0a;
-  border: 1px solid #39ff14;
 }
 .retro-scroll::-webkit-scrollbar-thumb {
+  background: #39ff1480;
+  border: 1px solid #39ff1440;
+}
+.retro-scroll::-webkit-scrollbar-thumb:hover {
   background: #39ff14;
+}
+.retro-scroll::-webkit-scrollbar-corner {
+  background: #0a0a0a;
+}
+.retro-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #39ff1480 #0a0a0a;
 }
 
 /* Grid Background */
@@ -409,4 +588,118 @@
 }
 .marquee {
   animation: marquee 15s linear infinite;
+}
+
+/* ── Splash Screen ─────────────────────────────────────── */
+@keyframes splash-fade-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.95);
+    filter: brightness(3) contrast(0.5);
+  }
+  40% {
+    opacity: 1;
+    filter: brightness(1.8) contrast(0.8);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: brightness(1) contrast(1);
+  }
+}
+.splash-screen-in {
+  animation: splash-fade-in 0.8s ease-out both;
+}
+
+/* ── UI/UX Polish ──────────────────────────────────────── */
+
+/* Turn indicator pulse */
+@keyframes turn-pulse {
+  0%, 100% {
+    box-shadow: 0 0 8px #fbbf2440;
+    border-color: #fbbf24;
+  }
+  50% {
+    box-shadow: 0 0 24px #fbbf2480, 0 0 48px #fbbf2430;
+    border-color: #fde68a;
+  }
+}
+.turn-pulse {
+  animation: turn-pulse 1.5s ease-in-out infinite;
+}
+
+/* Glow hover for interactive cards */
+@keyframes card-glow {
+  0%, 100% { box-shadow: 3px 3px 0 #222; }
+  50% { box-shadow: 3px 3px 0 #222, 0 0 8px #fbbf2440; }
+}
+
+/* Seat hover */
+.retro-seat:hover .retro-seat-ring {
+  border-color: #39ff1430;
+}
+
+/* Status dot pulse */
+@keyframes dot-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(1.3); }
+}
+.dot-pulse {
+  animation: dot-pulse 2s ease-in-out infinite;
+}
+
+/* Smooth panel transition */
+.panel-slide-in {
+  animation: panel-slide 0.3s ease-out both;
+}
+@keyframes panel-slide {
+  0% { opacity: 0; transform: translateY(8px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+/* Button press feedback */
+.retro-btn:active:not(:disabled) {
+  filter: brightness(1.2);
+}
+
+/* Better focus states for accessibility */
+.retro-btn:focus-visible {
+  outline: 2px solid #39ff14;
+  outline-offset: 3px;
+}
+.retro-input:focus-visible {
+  outline: 2px solid #39ff14;
+  outline-offset: 2px;
+}
+
+/* Card selected glow animation */
+@keyframes selected-glow {
+  0%, 100% { box-shadow: 0 0 8px #fbbf2460, 3px 10px 0 #222; }
+  50% { box-shadow: 0 0 16px #fbbf2480, 0 0 30px #fbbf2430, 3px 10px 0 #222; }
+}
+.retro-card-face.selected {
+  animation: selected-glow 1.5s ease-in-out infinite;
+}
+
+/* HUD bar glass effect */
+.hud-bar {
+  background: #0a0a0aEE;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+/* Player tag badges */
+.player-tag {
+  font-size: 7px;
+  padding: 1px 6px;
+  letter-spacing: 1px;
+  font-weight: bold;
+}
+
+/* Lobby player card hover */
+.lobby-player-card {
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.lobby-player-card:hover {
+  transform: translateY(-3px);
 }

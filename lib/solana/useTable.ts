@@ -12,13 +12,16 @@ import {
 } from "@solana/web3.js";
 import { Program, AnchorProvider, BN } from "@coral-xyz/anchor";
 import { IDL } from "./idl";
-import { useTableSubscription, GameEvent } from "./useTableSubscription";
+import { useTableSubscription } from "./useTableSubscription";
+import { useGameEvents } from "./useGameEvents";
+import { useConnectionStatus } from "./useConnectionStatus";
 import { PROGRAM_ID, INCO_LIGHTNING_PROGRAM_ID } from "./config";
 import { decrypt } from "@inco/solana-sdk";
 import type {
   AccountMeta,
   SimulatedTransactionResponse,
 } from "@solana/web3.js";
+import type { AnimationTrigger } from "./gameTypes";
 
 // ============================================================================
 // INCO ALLOWANCE HELPERS
@@ -120,6 +123,79 @@ export interface DecryptedCard {
   value: number; // 1-13 for card values
 }
 
+// ── Card cache helpers (localStorage) ──────────────────────────
+interface CardCache {
+  fingerprint: string;
+  cards: DecryptedCard[];
+}
+
+function getCardCacheKey(tableId: string, wallet: string): string {
+  return `liar-cards-${tableId}-${wallet}`;
+}
+
+function getEncryptedFingerprint(encryptedCards: any[]): string {
+  // Build a fingerprint from encrypted card handles so cache invalidates on new round
+  try {
+    return encryptedCards
+      .map((c: any) => `${c?.shape?.toString?.() ?? ""}:${c?.value?.toString?.() ?? ""}`)
+      .join("|");
+  } catch {
+    return "";
+  }
+}
+
+function loadCachedCards(
+  tableId: string,
+  wallet: string,
+  encryptedCards: any[],
+): DecryptedCard[] | null {
+  try {
+    const key = getCardCacheKey(tableId, wallet);
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+
+    const cached: CardCache = JSON.parse(raw);
+    const currentFingerprint = getEncryptedFingerprint(encryptedCards);
+
+    if (cached.fingerprint === currentFingerprint && cached.cards.length > 0) {
+      console.log("[Cache] Loaded cached decrypted cards:", cached.cards.length);
+      return cached.cards;
+    }
+    // Fingerprint mismatch — new round / different cards
+    localStorage.removeItem(key);
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function saveCachedCards(
+  tableId: string,
+  wallet: string,
+  encryptedCards: any[],
+  cards: DecryptedCard[],
+): void {
+  try {
+    const key = getCardCacheKey(tableId, wallet);
+    const cache: CardCache = {
+      fingerprint: getEncryptedFingerprint(encryptedCards),
+      cards,
+    };
+    localStorage.setItem(key, JSON.stringify(cache));
+    console.log("[Cache] Saved decrypted cards:", cards.length);
+  } catch {
+    // localStorage might be full or unavailable — ignore
+  }
+}
+
+function clearCardCache(tableId: string, wallet: string): void {
+  try {
+    localStorage.removeItem(getCardCacheKey(tableId, wallet));
+  } catch {
+    // ignore
+  }
+}
+
 export interface PlayerInfo {
   address: string;
   characterId: string | null;
@@ -163,9 +239,11 @@ export function useTable(tableIdString: string) {
   const [currentTurnPlayer, setCurrentTurnPlayer] = useState<string | null>(
     null,
   );
-  const [lastEvent, setLastEvent] = useState<GameEvent | null>(null);
   const [eventLog, setEventLog] = useState<GameEventLog[]>([]);
   const [shuffleTurn, setShuffleTurn] = useState<number>(-1); // -1 means no one should shuffle
+
+  // Animation state from WebSocket events
+  const [activeAnimation, setActiveAnimation] = useState<AnimationTrigger | null>(null);
 
   // Card decryption state
   const [myCards, setMyCards] = useState<DecryptedCard[]>([]);
@@ -174,6 +252,10 @@ export function useTable(tableIdString: string) {
 
   // Track last claim (who placed cards last)
   const [lastClaimBy, setLastClaimBy] = useState<string | null>(null);
+  const [isPlacingCards, setIsPlacingCards] = useState(false);
+  const [isCallingLiar, setIsCallingLiar] = useState(false);
+  const [liarCaller, setLiarCaller] = useState<string | null>(null);
+  const [isOver, setIsOver] = useState(false);
   const { signMessage } = useWallet();
 
   // Derive table PDA
@@ -284,8 +366,13 @@ export function useTable(tableIdString: string) {
           typeof table.suffleTrun === "number" ? table.suffleTrun : -1;
         setShuffleTurn(chainShuffleTurn);
 
+        // Track game over
+        setIsOver(!!table.isOver);
+
         // Update game state based on table status
-        if (table.isOpen) {
+        if (table.isOver) {
+          setGameState("ended");
+        } else if (table.isOpen) {
           setGameState("lobby");
         } else if (playerAddresses.length > 0) {
           setGameState("playing");
@@ -356,6 +443,14 @@ export function useTable(tableIdString: string) {
           ],
           PROGRAM_ID,
         );
+
+        // Check if player account already exists (already joined)
+        const existingAccount = await connection.getAccountInfo(playerAddress);
+        if (existingAccount) {
+          // Player already joined — refresh table data instead of sending a failing tx
+          await fetchTable();
+          return true;
+        }
 
         // Build compute budget instructions
         const computeUnitLimit = ComputeBudgetProgram.setComputeUnitLimit({
@@ -724,6 +819,7 @@ export function useTable(tableIdString: string) {
       await new Promise((r) => setTimeout(r, 3000));
 
       // 5. Decrypt one card at a time, updating state after each
+      const decryptedCards: DecryptedCard[] = [];
       for (let i = 0; i < handles.length; i++) {
         const result = await decrypt([handles[i].shape, handles[i].value], {
           address: publicKey,
@@ -732,12 +828,21 @@ export function useTable(tableIdString: string) {
 
         const shapeIdx = parseInt(result.plaintexts[0]);
         const valueIdx = parseInt(result.plaintexts[1]);
+        decryptedCards.push({ shape: shapeIdx, value: valueIdx });
 
         // Update state immediately so UI reveals this card
         setMyCards((prev) => [...prev, { shape: shapeIdx, value: valueIdx }]);
       }
 
-      return myCards;
+      // Cache decrypted cards to localStorage
+      saveCachedCards(
+        tableIdString,
+        publicKey.toString(),
+        player.cards,
+        decryptedCards,
+      );
+
+      return decryptedCards;
     } catch (err: any) {
       console.error("Error decrypting cards:", err);
       setDecryptFailed(true);
@@ -905,6 +1010,197 @@ export function useTable(tableIdString: string) {
     fetchTable,
   ]);
 
+  // Place cards on the table (core gameplay action)
+  const placeCards = useCallback(
+    async (pickedIndices: number[]): Promise<boolean> => {
+      if (!publicKey || !anchorWallet || !signTransaction) {
+        setError("Wallet not connected");
+        return false;
+      }
+
+      if (pickedIndices.length === 0) {
+        setError("Select at least one card to play");
+        return false;
+      }
+
+      setIsPlacingCards(true);
+      setError(null);
+
+      try {
+        const provider = new AnchorProvider(connection, anchorWallet, {
+          commitment: "confirmed",
+        });
+        const program = new Program(IDL as any, provider);
+
+        const tableId = new BN(tableIdString);
+        const tableAddress = getTableAddress();
+
+        const [playerAddress] = PublicKey.findProgramAddressSync(
+          [
+            Buffer.from("player"),
+            tableId.toArrayLike(Buffer, "le", 16),
+            publicKey.toBuffer(),
+          ],
+          PROGRAM_ID,
+        );
+
+        const computeUnitLimit = ComputeBudgetProgram.setComputeUnitLimit({
+          units: 300_000,
+        });
+        const computeUnitPrice = ComputeBudgetProgram.setComputeUnitPrice({
+          microLamports: 1000,
+        });
+
+        // Convert picked indices to bytes buffer
+        const pickedIndexsBuffer = Buffer.from(pickedIndices);
+
+        const txBuilder = (program.methods as any)
+          .placeCards(tableId, pickedIndexsBuffer)
+          .accounts({
+            user: publicKey,
+            table: tableAddress,
+            player: playerAddress,
+            systemProgram: SystemProgram.programId,
+            incoLightningProgram: INCO_LIGHTNING_PROGRAM_ID,
+          } as any)
+          .preInstructions([computeUnitLimit, computeUnitPrice]);
+
+        const transaction: Transaction = await txBuilder.transaction();
+        const { blockhash, lastValidBlockHeight } =
+          await connection.getLatestBlockhash("confirmed");
+        transaction.recentBlockhash = blockhash;
+        transaction.feePayer = publicKey;
+
+        const signed = await signTransaction!(transaction);
+        const tx = await connection.sendRawTransaction(signed.serialize(), {
+          skipPreflight: false,
+          maxRetries: 3,
+        });
+
+        await connection.confirmTransaction(
+          {
+            signature: tx,
+            blockhash,
+            lastValidBlockHeight,
+          },
+          "confirmed",
+        );
+
+        // Remove played cards from local state
+        setMyCards((prev) =>
+          prev.filter((_, idx) => !pickedIndices.includes(idx)),
+        );
+
+        await fetchTable(false);
+        return true;
+      } catch (err: any) {
+        console.error("Error placing cards:", err);
+        setError(err.message || "Failed to place cards");
+        return false;
+      } finally {
+        setIsPlacingCards(false);
+      }
+    },
+    [
+      connection,
+      publicKey,
+      anchorWallet,
+      signTransaction,
+      tableIdString,
+      getTableAddress,
+      fetchTable,
+    ],
+  );
+
+  // Call liar on the previous player (uses placeCards with empty indices)
+  const callLiar = useCallback(async (): Promise<boolean> => {
+    if (!publicKey || !anchorWallet || !signTransaction) {
+      setError("Wallet not connected");
+      return false;
+    }
+
+    setIsCallingLiar(true);
+    setError(null);
+
+    try {
+      const provider = new AnchorProvider(connection, anchorWallet, {
+        commitment: "confirmed",
+      });
+      const program = new Program(IDL as any, provider);
+
+      const tableId = new BN(tableIdString);
+      const tableAddress = getTableAddress();
+
+      const [playerAddress] = PublicKey.findProgramAddressSync(
+        [
+          Buffer.from("player"),
+          tableId.toArrayLike(Buffer, "le", 16),
+          publicKey.toBuffer(),
+        ],
+        PROGRAM_ID,
+      );
+
+      const computeUnitLimit = ComputeBudgetProgram.setComputeUnitLimit({
+        units: 300_000,
+      });
+      const computeUnitPrice = ComputeBudgetProgram.setComputeUnitPrice({
+        microLamports: 1000,
+      });
+
+      // Call liar = placeCards with empty indices
+      const emptyBuffer = Buffer.from([]);
+
+      const txBuilder = (program.methods as any)
+        .placeCards(tableId, emptyBuffer)
+        .accounts({
+          user: publicKey,
+          table: tableAddress,
+          player: playerAddress,
+          systemProgram: SystemProgram.programId,
+          incoLightningProgram: INCO_LIGHTNING_PROGRAM_ID,
+        } as any)
+        .preInstructions([computeUnitLimit, computeUnitPrice]);
+
+      const transaction: Transaction = await txBuilder.transaction();
+      const { blockhash, lastValidBlockHeight } =
+        await connection.getLatestBlockhash("confirmed");
+      transaction.recentBlockhash = blockhash;
+      transaction.feePayer = publicKey;
+
+      const signed = await signTransaction!(transaction);
+      const tx = await connection.sendRawTransaction(signed.serialize(), {
+        skipPreflight: false,
+        maxRetries: 3,
+      });
+
+      await connection.confirmTransaction(
+        {
+          signature: tx,
+          blockhash,
+          lastValidBlockHeight,
+        },
+        "confirmed",
+      );
+
+      await fetchTable(false);
+      return true;
+    } catch (err: any) {
+      console.error("Error calling liar:", err);
+      setError(err.message || "Failed to call liar");
+      return false;
+    } finally {
+      setIsCallingLiar(false);
+    }
+  }, [
+    connection,
+    publicKey,
+    anchorWallet,
+    signTransaction,
+    tableIdString,
+    getTableAddress,
+    fetchTable,
+  ]);
+
   // Helper to add event to log
   const addEventLog = useCallback(
     (type: string, message: string, player?: string) => {
@@ -926,129 +1222,150 @@ export function useTable(tableIdString: string) {
   const shortenAddress = (address: string) =>
     `${address.slice(0, 4)}...${address.slice(-4)}`;
 
-  // Handle WebSocket events
-  const handleEvent = useCallback(
-    (event: GameEvent) => {
-      setLastEvent(event);
-
-      // Check if this event is for our table
-      if (event.data.tableId !== tableIdString) {
-        return;
-      }
+  // ── Unified event handler ─────────────────────────────────────
+  // Called by useGameEvents when Anchor addEventListener fires.
+  // Updates the UI-driving state directly (gameState, currentTurnPlayer, etc.)
+  const handleGameEvent = useCallback(
+    (event: import("./gameTypes").GameEventPayload) => {
+      console.log("[WS][useTable] Event received:", event.type, event);
 
       switch (event.type) {
         case "playerJoined": {
-          const playerAddr = event.data.player;
           addEventLog(
             "playerJoined",
-            `${shortenAddress(playerAddr)} joined the table`,
-            playerAddr,
+            `${shortenAddress(event.player)} joined the table`,
+            event.player,
           );
-          // Refetch to get updated player list
           fetchTable(false);
           break;
         }
 
         case "roundStarted": {
           setGameState("playing");
+          setMyCards([]);
+          setDecryptFailed(false);
+          setLiarCaller(null);
+          setLastClaimBy(null);
+          // Clear cached cards — new round means new encrypted cards
+          if (publicKey) {
+            clearCardCache(tableIdString, publicKey.toString());
+          }
           addEventLog("roundStarted", "Round started!");
-          // Fetch fresh table data - shuffleTurn will be updated automatically
-          // User must manually click shuffle button if it's their turn
           fetchTable(false);
           break;
         }
 
         case "tableTrun": {
-          const playerAddr = event.data.player;
-          setCurrentTurnPlayer(playerAddr);
+          setCurrentTurnPlayer(event.player);
           addEventLog(
             "tableTrun",
-            `It's ${shortenAddress(playerAddr)}'s turn`,
-            playerAddr,
+            `It's ${shortenAddress(event.player)}'s turn`,
+            event.player,
           );
           fetchTable(false);
           break;
         }
 
         case "cardPlaced": {
-          const playerAddr = event.data.player;
-          setLastClaimBy(playerAddr);
+          setLastClaimBy(event.player);
           addEventLog(
             "cardPlaced",
-            `${shortenAddress(playerAddr)} placed a card`,
-            playerAddr,
+            `${shortenAddress(event.player)} placed a card`,
+            event.player,
           );
           fetchTable(false);
           break;
         }
 
         case "liarCalled": {
-          const callerAddr = event.data.caller;
+          setLiarCaller(event.caller);
           addEventLog(
             "liarCalled",
-            `${shortenAddress(callerAddr)} called LIAR!`,
-            callerAddr,
+            `${shortenAddress(event.caller)} called LIAR!`,
+            event.caller,
           );
           fetchTable(false);
           break;
         }
 
         case "playerEleminated": {
-          const playerAddr = event.data.player;
           addEventLog(
             "playerEleminated",
-            `${shortenAddress(playerAddr)} was eliminated!`,
-            playerAddr,
+            `${shortenAddress(event.player)} was eliminated!`,
+            event.player,
           );
           fetchTable(false);
           break;
         }
 
         case "suffleCardsForPlayer": {
-          const playerAddr = event.data.player;
-          const nextAddr = event.data.next;
           addEventLog(
             "suffleCardsForPlayer",
-            `Cards shuffled for ${shortenAddress(playerAddr)}, next: ${shortenAddress(nextAddr)}`,
-            playerAddr,
+            `Cards shuffled for ${shortenAddress(event.player)}, next: ${shortenAddress(event.next)}`,
+            event.player,
           );
-          setCurrentTurnPlayer(nextAddr);
-          // Fetch fresh table data - shuffleTurn will be updated automatically
-          // User must manually click shuffle button if it's their turn
+          setCurrentTurnPlayer(event.next);
           fetchTable(false);
           break;
         }
 
         case "emptyBulletFired": {
-          const playerAddr = event.data.player;
           addEventLog(
             "emptyBulletFired",
-            `${shortenAddress(playerAddr)} fired an empty bullet - safe!`,
-            playerAddr,
+            `${shortenAddress(event.player)} fired an empty bullet - safe!`,
+            event.player,
           );
           fetchTable(false);
           break;
         }
 
-        default:
-          // For any other events, just refetch
+        case "liarsTableCreated": {
+          addEventLog("liarsTableCreated", "Table created");
           fetchTable(false);
+          break;
+        }
       }
     },
-    [fetchTable, tableIdString, addEventLog],
+    [fetchTable, addEventLog],
   );
 
-  // Handle account changes via WebSocket
+  // Stable ref for the event handler (avoids re-creating addEventListener subscriptions)
+  const handleGameEventRef = useRef(handleGameEvent);
+  handleGameEventRef.current = handleGameEvent;
+
+  // ── Account change subscription (for table data updates) ────
   const handleAccountChange = useCallback(() => {
     fetchTable(false);
   }, [fetchTable]);
 
-  // Subscribe to WebSocket events and account changes
+  // Keep the account change subscription from the old system (it's lightweight)
   useTableSubscription({
     tableIdString,
-    onEvent: handleEvent,
     onAccountChange: handleAccountChange,
   });
+
+  // ── Anchor addEventListener-based event system (single source of truth) ──
+  const {
+    eventLog: wsEventLog,
+    activeAnimation: wsAnimation,
+  } = useGameEvents({
+    tableId: tableIdString,
+    onRefetchTable: () => fetchTable(false),
+    onGameEvent: (event) => handleGameEventRef.current(event),
+    onCardsShuffled: (_next) => {
+      // Cards were shuffled for our wallet — decrypt flow handled by auto-decrypt effect
+    },
+  });
+
+  // WebSocket connection health monitor
+  const { status: connectionStatus } = useConnectionStatus();
+
+  // Sync animation state from useGameEvents
+  useEffect(() => {
+    if (wsAnimation) {
+      setActiveAnimation(wsAnimation);
+    }
+  }, [wsAnimation]);
 
   // Fetch on mount and when wallet connects/changes
   useEffect(() => {
@@ -1109,6 +1426,25 @@ export function useTable(tableIdString: string) {
         ?.encryptedCards || []
     : [];
 
+  // ── Load cached decrypted cards or trigger decrypt ───────────
+  useEffect(() => {
+    if (!publicKey || myEncryptedCards.length === 0 || myCards.length > 0) return;
+    if (isDecryptingCards || decryptFailed) return;
+    if (gameState !== "playing") return;
+
+    const cached = loadCachedCards(
+      tableIdString,
+      publicKey.toString(),
+      myEncryptedCards,
+    );
+    if (cached) {
+      setMyCards(cached);
+    } else {
+      // Not in cache — trigger decryption
+      decryptMyCards();
+    }
+  }, [publicKey, tableIdString, myEncryptedCards, myCards.length, gameState, isDecryptingCards, decryptFailed, decryptMyCards]);
+
   return {
     // Table data
     tableData,
@@ -1119,9 +1455,10 @@ export function useTable(tableIdString: string) {
     gameState,
     currentTurnPlayer,
     isMyTurn,
-    lastEvent,
     eventLog,
     lastClaimBy,
+    liarCaller,
+    isOver,
 
     // Player state
     isPlayerInTable,
@@ -1144,6 +1481,8 @@ export function useTable(tableIdString: string) {
     startRound,
     quitTable,
     shuffleCards,
+    placeCards,
+    callLiar,
     fetchTable,
 
     // Action states
@@ -1151,5 +1490,12 @@ export function useTable(tableIdString: string) {
     isStarting,
     isQuitting,
     isShuffling,
+    isPlacingCards,
+    isCallingLiar,
+
+    // WebSocket event system
+    wsEventLog,
+    activeAnimation,
+    connectionStatus,
   };
 }

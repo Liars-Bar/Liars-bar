@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
 import { useWallet } from "@solana/wallet-adapter-react";
@@ -118,6 +118,35 @@ const TABLE_CARD_NAMES = [
   "KING",
 ];
 
+// ASCII card art for the table card display
+const TABLE_CARD_LABELS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
+const TABLE_CARD_SUITS = ["♠", "♥", "♦", "♣"];
+
+function getTableCardArt(cardIndex: number): string[] {
+  const label = TABLE_CARD_LABELS[cardIndex] ?? "?";
+  const pad = label.length > 1 ? "" : " "; // "10" needs less padding
+  if (label.length > 1) {
+    return [
+      "┌───────┐",
+      `│ ${label}    │`,
+      "│       │",
+      `│   ${TABLE_CARD_SUITS[0]}   │`,
+      "│       │",
+      `│    ${label} │`,
+      "└───────┘",
+    ];
+  }
+  return [
+    "┌───────┐",
+    `│ ${label}     │`,
+    "│       │",
+    `│   ${TABLE_CARD_SUITS[0]}   │`,
+    "│       │",
+    `│     ${label} │`,
+    "└───────┘",
+  ];
+}
+
 // ── Player seat positions (2D top-down) ─────────────────────────
 function getSeatPositions(count: number, myIndex: number) {
   const positions: { top: string; left: string; align: string }[] = [];
@@ -217,13 +246,40 @@ export default function RetroTablePage() {
     isShuffling,
     myCards,
     myEncryptedCards,
-    decryptMyCards,
     isDecryptingCards,
-    decryptFailed,
     lastClaimBy,
+    liarCaller,
+    isOver,
     isMyTurn,
     currentTurnPlayer,
+    placeCards,
+    callLiar,
+    isPlacingCards,
+    isCallingLiar,
+    // WebSocket event system
+    wsEventLog,
+    activeAnimation,
+    connectionStatus,
   } = useTable(tableId);
+
+  // Track eliminated players from the WS game state
+  const eliminatedPlayers = useMemo(() => {
+    const eliminated = new Set<string>();
+    for (const entry of wsEventLog) {
+      if (entry.type === "playerEleminated" && entry.player) {
+        eliminated.add(entry.player);
+      }
+    }
+    return eliminated;
+  }, [wsEventLog]);
+
+  // Auto-scroll event log
+  const eventLogRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (eventLogRef.current) {
+      eventLogRef.current.scrollTop = eventLogRef.current.scrollHeight;
+    }
+  }, [wsEventLog]);
 
   // Fetch balance
   useEffect(() => {
@@ -244,25 +300,7 @@ export default function RetroTablePage() {
     return () => clearInterval(interval);
   }, [publicKey, connection]);
 
-  // Auto-decrypt
-  useEffect(() => {
-    if (
-      gameState === "playing" &&
-      myEncryptedCards.length > 0 &&
-      myCards.length === 0 &&
-      !isDecryptingCards &&
-      !decryptFailed
-    ) {
-      decryptMyCards();
-    }
-  }, [
-    gameState,
-    myEncryptedCards.length,
-    myCards.length,
-    isDecryptingCards,
-    decryptFailed,
-    decryptMyCards,
-  ]);
+  // Auto-decrypt is now handled inside useTable (cache check → decrypt on miss)
 
   const handleLeaveTable = async () => {
     const success = await quitTable();
@@ -281,6 +319,18 @@ export default function RetroTablePage() {
       if (prev.length >= myCards.length) return [...prev.slice(1), index];
       return [...prev, index];
     });
+  };
+
+  const handlePlaceCards = async () => {
+    if (selectedCardIndices.length === 0) return;
+    const success = await placeCards(selectedCardIndices);
+    if (success) {
+      setSelectedCardIndices([]);
+    }
+  };
+
+  const handleCallLiar = async () => {
+    await callLiar();
   };
 
   const currentPlayerIndex =
@@ -704,6 +754,62 @@ export default function RetroTablePage() {
   }
 
   // ════════════════════════════════════════════════════════════
+  // ██ GAME OVER STATE ██████████████████████████████████████████
+  // ════════════════════════════════════════════════════════════
+  if (gameState === "ended" || isOver) {
+    const winner = playersWithPositions.find(
+      (p) => !eliminatedPlayers.has(p.address),
+    );
+    return (
+      <div
+        className="bg-[#0a0a0a] grid-bg relative overflow-hidden flex flex-col items-center justify-center"
+        style={{ height: "100%" }}
+      >
+        <StarField />
+        <div className="relative z-10 flex flex-col items-center gap-6">
+          <pre className="neon-amber text-[10px] sm:text-[12px] text-center">
+            {`╔══════════════════════════════╗
+║        GAME  OVER            ║
+╚══════════════════════════════╝`}
+          </pre>
+
+          {winner && (
+            <div className="flex flex-col items-center gap-3">
+              <div
+                className="w-16 h-16 sm:w-20 sm:h-20 overflow-hidden"
+                style={{
+                  border: `3px solid ${winner.color}`,
+                  boxShadow: `0 0 20px ${winner.color}60`,
+                  imageRendering: "pixelated",
+                }}
+              >
+                <Image
+                  src={winner.image}
+                  alt={winner.name}
+                  width={80}
+                  height={80}
+                  className="w-full h-full object-contain"
+                  style={{ imageRendering: "pixelated" }}
+                />
+              </div>
+              <span
+                className="text-[12px] sm:text-[14px] font-bold blink"
+                style={{ color: winner.color }}
+              >
+                {winner.isCurrentPlayer ? "YOU WIN!" : `${winner.name} WINS!`}
+              </span>
+            </div>
+          )}
+
+          <a href="/retro" className="retro-btn retro-btn-amber mt-4">
+            {"<< BACK TO MENU"}
+          </a>
+        </div>
+      </div>
+    );
+  }
+
+  // ════════════════════════════════════════════════════════════
   // ██ PLAYING STATE ████████████████████████████████████████████
   // ════════════════════════════════════════════════════════════
 
@@ -727,6 +833,34 @@ export default function RetroTablePage() {
           <span className="text-green-900 text-[7px]">
             {playersWithCharacters.length}/5
           </span>
+          {/* WebSocket Connection Status */}
+          <span className="text-green-900 text-[6px]">|</span>
+          <div className="flex items-center gap-1">
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                connectionStatus === "connected"
+                  ? "bg-green-500 dot-pulse"
+                  : connectionStatus === "reconnecting"
+                    ? "bg-yellow-500 blink"
+                    : "bg-red-500"
+              }`}
+            />
+            <span
+              className={`text-[6px] ${
+                connectionStatus === "connected"
+                  ? "text-green-600"
+                  : connectionStatus === "reconnecting"
+                    ? "text-yellow-500"
+                    : "text-red-500"
+              }`}
+            >
+              {connectionStatus === "connected"
+                ? "WS"
+                : connectionStatus === "reconnecting"
+                  ? "RECONNECTING"
+                  : "WS OFF"}
+            </span>
+          </div>
         </div>
         <div className="flex items-center gap-3 flex-shrink-0">
           {isMyTurn ? (
@@ -759,41 +893,40 @@ export default function RetroTablePage() {
               <p className="text-green-600 text-[7px] sm:text-[8px] mb-2">
                 TABLE CARD:
               </p>
-              <div className="flex items-center gap-2 mb-2 flex-wrap">
-                <div
-                  className="px-2 py-1.5 sm:px-3 sm:py-2 bg-[#1a1a0a]"
+              <div className="flex items-start gap-3 mb-2">
+                {/* ASCII Card Art */}
+                <pre
+                  className="text-[7px] sm:text-[8px] leading-tight select-none"
                   style={{
-                    border: "2px solid #fbbf24",
-                    boxShadow: "0 0 8px #fbbf2440",
+                    color: "#fbbf24",
+                    textShadow: "0 0 6px #fbbf2440",
                   }}
                 >
-                  <span className="neon-amber text-[9px] sm:text-[10px]">
-                    {TABLE_CARD_NAMES[tableData.tableCard] ?? "?"}
-                  </span>
-                </div>
+                  {getTableCardArt(tableData.tableCard).join("\n")}
+                </pre>
+
+                {/* Cards on table */}
                 {tableData.cardsOnTable > 0 && (
-                  <>
-                    <span className="text-green-800 text-[8px]">|</span>
+                  <div className="flex flex-col gap-1 pt-1">
+                    <span className="text-green-700 text-[6px]">ON TABLE:</span>
                     <div className="flex gap-1 flex-wrap">
                       {Array.from({ length: tableData.cardsOnTable }).map(
-
                         (_, i) => (
-                          <div
+                          <pre
                             key={i}
-                            className="w-5 h-7 sm:w-6 sm:h-8 flex items-center justify-center text-[7px]"
-                            style={{
-                              background:
-                                "repeating-conic-gradient(#1e3a5f 0% 25%, #162d50 0% 50%) 0 0 / 6px 6px",
-                              border: "2px solid #4a90d9",
-                              boxShadow: "2px 2px 0 #111",
-                            }}
+                            className="text-[5px] sm:text-[6px] leading-tight"
+                            style={{ color: "#4a90d9" }}
                           >
-                            <span className="text-blue-300 opacity-40">?</span>
-                          </div>
+{`┌───┐
+│░░░│
+│ ? │
+│░░░│
+└───┘`}
+                          </pre>
                         ),
                       )}
                     </div>
-                  </>
+                  </div>
                 )}
               </div>
 
@@ -919,29 +1052,55 @@ export default function RetroTablePage() {
               .filter((p) => !p.isCurrentPlayer)
               .map((player) => {
                 const isTurnPlayer = currentTurnPlayer === player.address;
+                const isEliminated = eliminatedPlayers.has(player.address);
+                const isAnimTarget =
+                  activeAnimation?.player === player.address;
                 return (
                   <div
                     key={player.address}
-                    className={`retro-seat ${isTurnPlayer ? "retro-seat-active" : ""}`}
-                    style={{ top: player.top, left: player.left }}
+                    className={`retro-seat ${isTurnPlayer ? "retro-seat-active" : ""} ${isEliminated ? "retro-seat-eliminated" : ""}`}
+                    style={{
+                      top: player.top,
+                      left: player.left,
+                      opacity: isEliminated ? 0.3 : 1,
+                      filter: isEliminated ? "grayscale(0.8)" : "none",
+                      transition: "opacity 0.5s, filter 0.5s",
+                    }}
                   >
-                    {isTurnPlayer && (
+                    {isTurnPlayer && !isEliminated && (
                       <span className="neon-amber text-[6px] mb-1 blink tracking-wider">
                         TURN
                       </span>
                     )}
+                    {isEliminated && (
+                      <span className="neon-red text-[6px] mb-1 tracking-wider">
+                        OUT
+                      </span>
+                    )}
                     <div className="relative">
                       <div className="retro-seat-ring" />
+                      {/* Liar called animation ring */}
+                      {isAnimTarget && activeAnimation?.type === "liar-called" && (
+                        <div className="anim-liar-ring" />
+                      )}
+                      {/* Empty bullet animation */}
+                      {isAnimTarget && activeAnimation?.type === "empty-bullet" && (
+                        <div className="anim-bullet-flash" />
+                      )}
+                      {/* Eliminated animation */}
+                      {isAnimTarget && activeAnimation?.type === "player-eliminated" && (
+                        <div className="anim-eliminated-x" />
+                      )}
                       <div
-                        className={`w-10 h-10 sm:w-12 sm:h-12 overflow-hidden ${isTurnPlayer ? "turn-pulse" : ""}`}
+                        className={`w-10 h-10 sm:w-12 sm:h-12 overflow-hidden ${isTurnPlayer && !isEliminated ? "turn-pulse" : ""}`}
                         style={{
-                          border: `3px solid ${player.color}`,
-                          boxShadow: isTurnPlayer
+                          border: `3px solid ${isEliminated ? "#444" : player.color}`,
+                          boxShadow: isTurnPlayer && !isEliminated
                             ? `0 0 12px ${player.color}80, 3px 3px 0 #111`
                             : `3px 3px 0 #111`,
                           imageRendering: "pixelated",
                           background: "#0a0a0a",
-                          transition: "box-shadow 0.3s",
+                          transition: "box-shadow 0.3s, border-color 0.5s",
                         }}
                       >
                         <Image
@@ -958,9 +1117,10 @@ export default function RetroTablePage() {
                       className="mt-1 px-2 py-0.5 text-[7px] sm:text-[8px] text-center whitespace-nowrap"
                       style={{
                         background: "#0d0d0dEE",
-                        color: player.color,
-                        border: `2px solid ${player.color}50`,
-                        boxShadow: `0 0 6px ${player.color}15, 2px 2px 0 #0a0a0a`,
+                        color: isEliminated ? "#555" : player.color,
+                        border: `2px solid ${isEliminated ? "#33333350" : player.color + "50"}`,
+                        boxShadow: `0 0 6px ${isEliminated ? "#00000015" : player.color + "15"}, 2px 2px 0 #0a0a0a`,
+                        textDecoration: isEliminated ? "line-through" : "none",
                       }}
                     >
                       {player.name}
@@ -969,6 +1129,33 @@ export default function RetroTablePage() {
                 );
               })}
           </div>
+
+          {/* Liar Called Banner */}
+          {liarCaller && (
+            <div
+              className="absolute z-30 flex justify-center inset-x-0"
+              style={{ top: "8%" }}
+            >
+              <div
+                className="px-4 py-2 bg-[#0a0a0aEE]"
+                style={{
+                  border: "2px solid #ef4444",
+                  boxShadow: "0 0 16px #ef444460",
+                }}
+              >
+                <span className="neon-red text-[9px] sm:text-[10px]">
+                  {(() => {
+                    const callerPlayer = playersWithPositions.find(
+                      (p) => p.address === liarCaller,
+                    );
+                    return callerPlayer
+                      ? `${callerPlayer.name} CALLED LIAR!`
+                      : "LIAR CALLED!";
+                  })()}
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* Shuffle Button */}
           {shouldShowShuffleButton && (
@@ -985,6 +1172,120 @@ export default function RetroTablePage() {
               </button>
             </div>
           )}
+
+          {/* ── Card Placed Animation Overlay ───────────────── */}
+          {activeAnimation?.type === "card-placed" && (
+            <div className="absolute inset-0 z-40 pointer-events-none flex items-center justify-center">
+              <div className="anim-card-placed-flash">
+                <span className="neon-cyan text-[10px]">CARD PLACED</span>
+              </div>
+            </div>
+          )}
+
+          {/* ── Liar Called Animation Overlay ────────────────── */}
+          {activeAnimation?.type === "liar-called" && (
+            <div className="absolute inset-0 z-40 pointer-events-none flex items-center justify-center">
+              <div className="anim-liar-overlay">
+                <pre className="neon-red text-[12px] sm:text-[16px] text-center">
+                  {`!! LIAR !!`}
+                </pre>
+              </div>
+            </div>
+          )}
+
+          {/* ── Empty Bullet Animation Overlay ──────────────── */}
+          {activeAnimation?.type === "empty-bullet" && (
+            <div className="absolute inset-0 z-40 pointer-events-none flex items-center justify-center">
+              <div className="anim-roulette-overlay">
+                <pre className="neon-amber text-[10px] sm:text-[14px] text-center">
+                  {`*CLICK*\nEMPTY CHAMBER`}
+                </pre>
+              </div>
+            </div>
+          )}
+
+          {/* ── Player Eliminated Animation Overlay ─────────── */}
+          {activeAnimation?.type === "player-eliminated" && (
+            <div className="absolute inset-0 z-40 pointer-events-none flex items-center justify-center">
+              <div className="anim-eliminated-overlay">
+                <pre className="neon-red text-[10px] sm:text-[14px] text-center">
+                  {`ELIMINATED`}
+                </pre>
+              </div>
+            </div>
+          )}
+
+          {/* ── Round Started Animation Overlay ─────────────── */}
+          {activeAnimation?.type === "round-started" && (
+            <div className="absolute inset-0 z-40 pointer-events-none flex items-center justify-center">
+              <div className="anim-round-start">
+                <pre className="neon-green text-[12px] sm:text-[16px] text-center">
+                  {`ROUND START`}
+                </pre>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── RIGHT SIDEBAR: Event Log ─────────────────────── */}
+        <div className="relative z-30 w-44 sm:w-52 flex-shrink-0 flex flex-col p-2 gap-2 min-h-0">
+          <div
+            className="bg-[#0a0a0aCC] flex-1 flex flex-col min-h-0 panel-slide-in"
+            style={{ border: "2px solid #1a3a1a" }}
+          >
+            <div
+              className="px-2 py-1.5 flex items-center justify-between"
+              style={{ borderBottom: "1px solid #1a3a1a" }}
+            >
+              <span className="text-green-600 text-[7px]">EVENT LOG</span>
+              <span className="text-green-900 text-[6px]">
+                {wsEventLog.length}
+              </span>
+            </div>
+            <div
+              ref={eventLogRef}
+              className="flex-1 overflow-y-auto retro-scroll px-1.5 py-1"
+            >
+              {wsEventLog.length === 0 && (
+                <p className="text-green-900 text-[7px] text-center py-2">
+                  WAITING FOR EVENTS...
+                </p>
+              )}
+              {wsEventLog.map((entry, i) => (
+                <div
+                  key={`${entry.timestamp}-${i}`}
+                  className="py-0.5 panel-slide-in"
+                  style={{
+                    borderBottom: "1px solid #0a1a0a",
+                    animationDelay: `${i * 0.02}s`,
+                  }}
+                >
+                  <span
+                    className="text-[6px] block"
+                    style={{
+                      color:
+                        entry.type === "liarCalled"
+                          ? "#ef4444"
+                          : entry.type === "playerEleminated"
+                            ? "#ef4444"
+                            : entry.type === "emptyBulletFired"
+                              ? "#fbbf24"
+                              : entry.type === "roundStarted"
+                                ? "#39ff14"
+                                : entry.type === "cardPlaced"
+                                  ? "#22d3ee"
+                                  : "#4ade80",
+                    }}
+                  >
+                    [{new Date(entry.timestamp).toLocaleTimeString()}]
+                  </span>
+                  <span className="text-green-400 text-[7px]">
+                    {entry.message}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1072,19 +1373,20 @@ export default function RetroTablePage() {
         {gameState === "playing" && myCards.length > 0 && (
           <div className="flex items-center gap-3">
             <button
-              disabled={!isMyTurn || !tableData || tableData.cardsOnTable === 0}
+              onClick={handleCallLiar}
+              disabled={!isMyTurn || !tableData || tableData.cardsOnTable === 0 || isCallingLiar || isPlacingCards}
               className="retro-btn retro-btn-red text-[9px] px-4 py-2"
             >
-              !! LIAR !!
+              {isCallingLiar ? "CALLING..." : "!! LIAR !!"}
             </button>
             <button
-              disabled={!isMyTurn || selectedCardIndices.length === 0}
-              className={`retro-btn retro-btn-amber text-[9px] px-4 py-2 ${isMyTurn && selectedCardIndices.length > 0 ? "turn-pulse" : ""}`}
+              onClick={handlePlaceCards}
+              disabled={!isMyTurn || selectedCardIndices.length === 0 || isPlacingCards || isCallingLiar}
+              className={`retro-btn retro-btn-amber text-[9px] px-4 py-2 ${isMyTurn && selectedCardIndices.length > 0 && !isPlacingCards ? "turn-pulse" : ""}`}
             >
-              PLAY
-              {selectedCardIndices.length > 0
-                ? ` (${selectedCardIndices.length})`
-                : ""}
+              {isPlacingCards
+                ? "PLACING..."
+                : `PLAY${selectedCardIndices.length > 0 ? ` (${selectedCardIndices.length})` : ""}`}
             </button>
           </div>
         )}
@@ -1097,13 +1399,43 @@ export default function RetroTablePage() {
           <span className="text-green-900 text-[6px] sm:text-[7px]">
             TABLE: {tableId.slice(0, 8)}...
           </span>
-          <div className="flex items-center gap-1.5">
-            <span
-              className={`w-1 h-1 rounded-full ${connected ? "bg-green-500 dot-pulse" : "bg-red-500"}`}
-            />
-            <span className="text-green-900 text-[6px] sm:text-[7px]">
-              {connected ? "ONLINE" : "OFFLINE"}
-            </span>
+          <div className="flex items-center gap-3">
+            {/* Wallet status */}
+            <div className="flex items-center gap-1">
+              <span
+                className={`w-1 h-1 rounded-full ${connected ? "bg-green-500 dot-pulse" : "bg-red-500"}`}
+              />
+              <span className="text-green-900 text-[6px] sm:text-[7px]">
+                {connected ? "WALLET" : "NO WALLET"}
+              </span>
+            </div>
+            {/* WebSocket status */}
+            <div className="flex items-center gap-1">
+              <span
+                className={`w-1 h-1 rounded-full ${
+                  connectionStatus === "connected"
+                    ? "bg-green-500 dot-pulse"
+                    : connectionStatus === "reconnecting"
+                      ? "bg-yellow-500 blink"
+                      : "bg-red-500"
+                }`}
+              />
+              <span
+                className={`text-[6px] sm:text-[7px] ${
+                  connectionStatus === "connected"
+                    ? "text-green-900"
+                    : connectionStatus === "reconnecting"
+                      ? "text-yellow-600"
+                      : "text-red-600"
+                }`}
+              >
+                {connectionStatus === "connected"
+                  ? "WS LIVE"
+                  : connectionStatus === "reconnecting"
+                    ? "RECONNECTING..."
+                    : "WS DOWN"}
+              </span>
+            </div>
           </div>
         </div>
       </div>

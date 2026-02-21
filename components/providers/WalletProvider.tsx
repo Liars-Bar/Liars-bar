@@ -10,7 +10,7 @@ import {
   PhantomWalletAdapter,
   SolflareWalletAdapter,
 } from "@solana/wallet-adapter-wallets";
-import { SOLANA_RPC_ENDPOINT } from "@/lib/solana/config";
+import { SOLANA_RPC_ENDPOINT, SOLANA_WS_ENDPOINT } from "@/lib/solana/config";
 
 // Import wallet adapter styles
 import "@solana/wallet-adapter-react-ui/styles.css";
@@ -29,7 +29,7 @@ export const WalletProvider: FC<Props> = ({ children }) => {
   );
 
   return (
-    <ConnectionProvider endpoint={SOLANA_RPC_ENDPOINT}>
+    <ConnectionProvider endpoint={SOLANA_RPC_ENDPOINT} config={{ wsEndpoint: SOLANA_WS_ENDPOINT, commitment: "confirmed" }}>
       <SolanaWalletProvider wallets={wallets} autoConnect>
         <WalletModalProvider>{children}</WalletModalProvider>
       </SolanaWalletProvider>

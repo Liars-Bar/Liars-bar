@@ -40,3 +40,23 @@ export { useCreateTable } from "./useCreateTable";
 export { useTable } from "./useTable";
 export { useTableSubscription, type GameEvent } from "./useTableSubscription";
 export { useIncoRandom, type DecryptedRandomResult } from "./useIncoRandom";
+export { useGameEvents, type EventLogEntry } from "./useGameEvents";
+export { useConnectionStatus } from "./useConnectionStatus";
+
+// Event Listener Module
+export {
+  registerEventListeners,
+  type EventListenerOptions,
+  type EventListenerCleanup,
+} from "./eventListener";
+
+// Game Types
+export {
+  type GameState as WebSocketGameState,
+  type GameEventPayload,
+  type AnimationTrigger,
+  type AnimationType,
+  type ConnectionStatus,
+  type Move,
+  createInitialGameState,
+} from "./gameTypes";

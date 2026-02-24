@@ -220,6 +220,7 @@ export default function RetroTablePage() {
   const [copied, setCopied] = useState(false);
   const [balance, setBalance] = useState<number | null>(null);
   const [selectedCardIndices, setSelectedCardIndices] = useState<number[]>([]);
+  const [pendingAction, setPendingAction] = useState<"place" | "liar" | null>(null);
 
   const handleCopyTableId = async () => {
     await navigator.clipboard.writeText(tableId);
@@ -300,7 +301,14 @@ export default function RetroTablePage() {
     return () => clearInterval(interval);
   }, [publicKey, connection]);
 
-  // Auto-decrypt is now handled inside useTable (cache check → decrypt on miss)
+  // Reset selected cards when a new round begins
+  const prevGameState = useRef(gameState);
+  useEffect(() => {
+    if (prevGameState.current !== "playing" && gameState === "playing") {
+      setSelectedCardIndices([]);
+    }
+    prevGameState.current = gameState;
+  }, [gameState]);
 
   const handleLeaveTable = async () => {
     const success = await quitTable();
@@ -327,10 +335,6 @@ export default function RetroTablePage() {
     if (success) {
       setSelectedCardIndices([]);
     }
-  };
-
-  const handleCallLiar = async () => {
-    await callLiar();
   };
 
   const currentPlayerIndex =
@@ -801,9 +805,20 @@ export default function RetroTablePage() {
             </div>
           )}
 
-          <a href="/retro" className="retro-btn retro-btn-amber mt-4">
-            {"<< BACK TO MENU"}
-          </a>
+          <div className="flex gap-3 mt-4">
+            {canStart && (
+              <button
+                onClick={() => startRound()}
+                disabled={isStarting}
+                className="retro-btn retro-btn-cyan"
+              >
+                {isStarting ? ">> STARTING..." : ">> NEW GAME"}
+              </button>
+            )}
+            <a href="/retro" className="retro-btn retro-btn-amber">
+              {"<< BACK TO MENU"}
+            </a>
+          </div>
         </div>
       </div>
     );
@@ -1065,6 +1080,7 @@ export default function RetroTablePage() {
                       opacity: isEliminated ? 0.3 : 1,
                       filter: isEliminated ? "grayscale(0.8)" : "none",
                       transition: "opacity 0.5s, filter 0.5s",
+                      pointerEvents: isEliminated ? "none" : undefined,
                     }}
                   >
                     {isTurnPlayer && !isEliminated && (
@@ -1227,6 +1243,20 @@ export default function RetroTablePage() {
           )}
         </div>
 
+        {/* ── Wallet Disconnect Overlay ────────────────────── */}
+        {!connected && (
+          <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#0a0a0a]/90">
+            <pre className="neon-red text-[9px] sm:text-[10px] text-center mb-3">
+              {`╔══════════════════════════════╗
+║    WALLET  DISCONNECTED      ║
+╚══════════════════════════════╝`}
+            </pre>
+            <p className="neon-amber text-[9px] blink tracking-widest">
+              RECONNECT TO CONTINUE
+            </p>
+          </div>
+        )}
+
         {/* ── RIGHT SIDEBAR: Event Log ─────────────────────── */}
         <div className="relative z-30 w-44 sm:w-52 flex-shrink-0 flex flex-col p-2 gap-2 min-h-0">
           <div
@@ -1371,24 +1401,52 @@ export default function RetroTablePage() {
 
         {/* Action Buttons */}
         {gameState === "playing" && myCards.length > 0 && (
-          <div className="flex items-center gap-3">
-            <button
-              onClick={handleCallLiar}
-              disabled={!isMyTurn || !tableData || tableData.cardsOnTable === 0 || isCallingLiar || isPlacingCards}
-              className="retro-btn retro-btn-red text-[9px] px-4 py-2"
-            >
-              {isCallingLiar ? "CALLING..." : "!! LIAR !!"}
-            </button>
-            <button
-              onClick={handlePlaceCards}
-              disabled={!isMyTurn || selectedCardIndices.length === 0 || isPlacingCards || isCallingLiar}
-              className={`retro-btn retro-btn-amber text-[9px] px-4 py-2 ${isMyTurn && selectedCardIndices.length > 0 && !isPlacingCards ? "turn-pulse" : ""}`}
-            >
-              {isPlacingCards
-                ? "PLACING..."
-                : `PLAY${selectedCardIndices.length > 0 ? ` (${selectedCardIndices.length})` : ""}`}
-            </button>
-          </div>
+          pendingAction ? (
+            <div className="flex flex-col items-center gap-1 pixel-fade-in">
+              <p className="neon-amber text-[9px] text-center">
+                {pendingAction === "liar"
+                  ? "CALL LIAR? THIS CANNOT BE UNDONE."
+                  : `CLAIM ${selectedCardIndices.length} ${TABLE_CARD_NAMES[tableData?.tableCard ?? 0] ?? "CARD"}${selectedCardIndices.length !== 1 ? "S" : ""}? CONFIRM?`}
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={async () => {
+                    setPendingAction(null);
+                    if (pendingAction === "liar") await callLiar();
+                    else await handlePlaceCards();
+                  }}
+                  className="retro-btn retro-btn-amber text-[9px] px-4 py-1"
+                >
+                  YES
+                </button>
+                <button
+                  onClick={() => setPendingAction(null)}
+                  className="retro-btn retro-btn-red text-[9px] px-4 py-1"
+                >
+                  NO
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setPendingAction("liar")}
+                disabled={!isMyTurn || !tableData || tableData.cardsOnTable === 0 || isCallingLiar || isPlacingCards}
+                className="retro-btn retro-btn-red text-[9px] px-4 py-2"
+              >
+                {isCallingLiar ? "CALLING..." : "!! LIAR !!"}
+              </button>
+              <button
+                onClick={() => selectedCardIndices.length > 0 && setPendingAction("place")}
+                disabled={!isMyTurn || selectedCardIndices.length === 0 || isPlacingCards || isCallingLiar}
+                className={`retro-btn retro-btn-amber text-[9px] px-4 py-2 ${isMyTurn && selectedCardIndices.length > 0 && !isPlacingCards ? "turn-pulse" : ""}`}
+              >
+                {isPlacingCards
+                  ? "PLACING..."
+                  : `PLAY${selectedCardIndices.length > 0 ? ` (${selectedCardIndices.length})` : ""}`}
+              </button>
+            </div>
+          )
         )}
 
         {/* Status line */}

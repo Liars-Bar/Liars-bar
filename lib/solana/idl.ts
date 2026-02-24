@@ -698,6 +698,32 @@ export type LiarsBarDapp = {
         49,
         165
       ]
+    },
+    {
+      "name": "gameOver",
+      "discriminator": [
+        122,
+        28,
+        20,
+        209,
+        123,
+        166,
+        111,
+        64
+      ]
+    },
+    {
+      "name": "gameWinner",
+      "discriminator": [
+        140,
+        179,
+        49,
+        235,
+        98,
+        122,
+        213,
+        148
+      ]
     }
   ],
   "errors": [
@@ -725,6 +751,11 @@ export type LiarsBarDapp = {
       "code": 6004,
       "name": "notEligible",
       "msg": "You are Not Eligible for this call"
+    },
+    {
+      "code": 6005,
+      "name": "needTwoPlayer",
+      "msg": "Need At Least Two Player"
     }
   ],
   "types": [
@@ -865,6 +896,10 @@ export type LiarsBarDapp = {
           {
             "name": "suffleTrun",
             "type": "u8"
+          },
+          {
+            "name": "playerCardsLeft",
+            "type": "bytes"
           }
         ]
       }
@@ -973,6 +1008,34 @@ export type LiarsBarDapp = {
     },
     {
       "name": "tableTrun",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "tableId",
+            "type": "u128"
+          },
+          {
+            "name": "player",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "gameOver",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "tableId",
+            "type": "u128"
+          }
+        ]
+      }
+    },
+    {
+      "name": "gameWinner",
       "type": {
         "kind": "struct",
         "fields": [
@@ -1235,14 +1298,17 @@ export const IDL: LiarsBarDapp = {
     { "name": "playerJoined", "discriminator": [39, 144, 49, 106, 108, 210, 183, 38] },
     { "name": "roundStarted", "discriminator": [180, 209, 2, 244, 238, 48, 170, 120] },
     { "name": "suffleCardsForPlayer", "discriminator": [127, 195, 85, 107, 182, 62, 225, 216] },
-    { "name": "tableTrun", "discriminator": [87, 20, 99, 18, 166, 189, 49, 165] }
+    { "name": "tableTrun", "discriminator": [87, 20, 99, 18, 166, 189, 49, 165] },
+    { "name": "gameOver", "discriminator": [122, 28, 20, 209, 123, 166, 111, 64] },
+    { "name": "gameWinner", "discriminator": [140, 179, 49, 235, 98, 122, 213, 148] }
   ],
   "errors": [
     { "code": 6000, "name": "tableAlreadyInitialized", "msg": "Table Already Initialized" },
     { "code": 6001, "name": "tableIsFull", "msg": "Table is full please join other table" },
     { "code": 6002, "name": "notYourTrunSuffle", "msg": "Not your trun to call suffle you scripter" },
     { "code": 6003, "name": "notYourTrun", "msg": "Not Your Trun to play you scripter" },
-    { "code": 6004, "name": "notEligible", "msg": "You are Not Eligible for this call" }
+    { "code": 6004, "name": "notEligible", "msg": "You are Not Eligible for this call" },
+    { "code": 6005, "name": "needTwoPlayer", "msg": "Need At Least Two Player" }
   ],
   "types": [
     {
@@ -1303,7 +1369,8 @@ export const IDL: LiarsBarDapp = {
           { "name": "players", "type": { "vec": "pubkey" } },
           { "name": "deck", "type": { "vec": { "vec": "bool" } } },
           { "name": "trunToPlay", "type": "u8" },
-          { "name": "suffleTrun", "type": "u8" }
+          { "name": "suffleTrun", "type": "u8" },
+          { "name": "playerCardsLeft", "type": "bytes" }
         ]
       }
     },
@@ -1365,6 +1432,25 @@ export const IDL: LiarsBarDapp = {
     },
     {
       "name": "tableTrun",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "tableId", "type": "u128" },
+          { "name": "player", "type": "pubkey" }
+        ]
+      }
+    },
+    {
+      "name": "gameOver",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "tableId", "type": "u128" }
+        ]
+      }
+    },
+    {
+      "name": "gameWinner",
       "type": {
         "kind": "struct",
         "fields": [

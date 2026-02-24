@@ -117,6 +117,28 @@ function parseHandlesFromSimulation(
   return uniqueHandles;
 }
 
+// ── Transaction confirmation with timeout ──────────────────────
+async function confirmWithTimeout(
+  connection: import("@solana/web3.js").Connection,
+  signature: string,
+  blockhash: string,
+  lastValidBlockHeight: number,
+  timeoutMs = 60_000,
+): Promise<void> {
+  await Promise.race([
+    connection.confirmTransaction(
+      { signature, blockhash, lastValidBlockHeight },
+      "confirmed",
+    ),
+    new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error("Transaction timed out after 60s. Check your wallet or Solscan.")),
+        timeoutMs,
+      )
+    ),
+  ]);
+}
+
 // Decrypted card for display
 export interface DecryptedCard {
   shape: number; // 0-3 for suits
@@ -275,6 +297,9 @@ export function useTable(tableIdString: string) {
   // Ref to track if shuffle is in progress (avoids stale closure issues)
   const isShufflingRef = useRef(false);
 
+  // Debounce ref for fetchTable — prevents flooding RPC on bursts of events
+  const fetchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Ref to access current tableData without causing subscription re-creation
   const tableDataRef = useRef<TableData | null>(null);
 
@@ -398,6 +423,12 @@ export function useTable(tableIdString: string) {
     [connection, anchorWallet, tableIdString, getTableAddress],
   );
 
+  // Debounced fetchTable — collapses rapid event bursts into a single RPC call
+  const debouncedFetchTable = useCallback(() => {
+    if (fetchDebounceRef.current) clearTimeout(fetchDebounceRef.current);
+    fetchDebounceRef.current = setTimeout(() => fetchTable(false), 400);
+  }, [fetchTable]);
+
   // Join table with character selection
   const joinTable = useCallback(
     async (characterId: string): Promise<boolean> => {
@@ -497,14 +528,7 @@ export function useTable(tableIdString: string) {
           maxRetries: 3,
         });
 
-        await connection.confirmTransaction(
-          {
-            signature: tx,
-            blockhash,
-            lastValidBlockHeight,
-          },
-          "confirmed",
-        );
+        await confirmWithTimeout(connection, tx, blockhash, lastValidBlockHeight);
 
         await fetchTable();
         return true;
@@ -587,14 +611,7 @@ export function useTable(tableIdString: string) {
         maxRetries: 3,
       });
 
-      await connection.confirmTransaction(
-        {
-          signature: tx,
-          blockhash,
-          lastValidBlockHeight,
-        },
-        "confirmed",
-      );
+      await confirmWithTimeout(connection, tx, blockhash, lastValidBlockHeight);
 
       await fetchTable();
       return true;
@@ -674,14 +691,7 @@ export function useTable(tableIdString: string) {
         maxRetries: 3,
       });
 
-      await connection.confirmTransaction(
-        {
-          signature: tx,
-          blockhash,
-          lastValidBlockHeight,
-        },
-        "confirmed",
-      );
+      await confirmWithTimeout(connection, tx, blockhash, lastValidBlockHeight);
 
       return true;
     } catch (err: any) {
@@ -810,10 +820,7 @@ export function useTable(tableIdString: string) {
         maxRetries: 5,
       });
 
-      await connection.confirmTransaction(
-        { signature: grantSig, blockhash, lastValidBlockHeight },
-        "confirmed",
-      );
+      await confirmWithTimeout(connection, grantSig, blockhash, lastValidBlockHeight);
 
       // 4. Wait for TEE to process the allowances
       await new Promise((r) => setTimeout(r, 3000));
@@ -968,14 +975,15 @@ export function useTable(tableIdString: string) {
       });
 
       // Wait for confirmation
-      const confirmation = await connection.confirmTransaction(
-        {
-          signature: tx,
-          blockhash,
-          lastValidBlockHeight,
-        },
-        "confirmed",
-      );
+      const confirmation = await Promise.race([
+        connection.confirmTransaction(
+          { signature: tx, blockhash, lastValidBlockHeight },
+          "confirmed",
+        ),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("Transaction timed out after 60s.")), 60_000)
+        ),
+      ]);
 
       if (confirmation.value.err) {
         // Check if this is "not your turn" error (6002) - expected in multiplayer race conditions
@@ -1044,6 +1052,19 @@ export function useTable(tableIdString: string) {
           PROGRAM_ID,
         );
 
+        // Pre-validate: ensure player has cards on-chain before sending tx
+        const playerAccount = await (program.account as any).player.fetch(playerAddress);
+        if (!playerAccount.cards || playerAccount.cards.length === 0) {
+          setError("Your hand is empty — cards haven't been dealt yet. Please wait for the shuffle to complete.");
+          setMyCards([]);
+          return false;
+        }
+        if (pickedIndices.some((idx) => idx >= playerAccount.cards.length)) {
+          setError("Card selection is out of sync. Refreshing table data...");
+          await fetchTable(false);
+          return false;
+        }
+
         const computeUnitLimit = ComputeBudgetProgram.setComputeUnitLimit({
           units: 300_000,
         });
@@ -1077,14 +1098,7 @@ export function useTable(tableIdString: string) {
           maxRetries: 3,
         });
 
-        await connection.confirmTransaction(
-          {
-            signature: tx,
-            blockhash,
-            lastValidBlockHeight,
-          },
-          "confirmed",
-        );
+        await confirmWithTimeout(connection, tx, blockhash, lastValidBlockHeight);
 
         // Remove played cards from local state
         setMyCards((prev) =>
@@ -1173,14 +1187,7 @@ export function useTable(tableIdString: string) {
         maxRetries: 3,
       });
 
-      await connection.confirmTransaction(
-        {
-          signature: tx,
-          blockhash,
-          lastValidBlockHeight,
-        },
-        "confirmed",
-      );
+      await confirmWithTimeout(connection, tx, blockhash, lastValidBlockHeight);
 
       await fetchTable(false);
       return true;
@@ -1236,7 +1243,7 @@ export function useTable(tableIdString: string) {
             `${shortenAddress(event.player)} joined the table`,
             event.player,
           );
-          fetchTable(false);
+          debouncedFetchTable();
           break;
         }
 
@@ -1251,7 +1258,7 @@ export function useTable(tableIdString: string) {
             clearCardCache(tableIdString, publicKey.toString());
           }
           addEventLog("roundStarted", "Round started!");
-          fetchTable(false);
+          debouncedFetchTable();
           break;
         }
 
@@ -1262,7 +1269,7 @@ export function useTable(tableIdString: string) {
             `It's ${shortenAddress(event.player)}'s turn`,
             event.player,
           );
-          fetchTable(false);
+          debouncedFetchTable();
           break;
         }
 
@@ -1273,7 +1280,7 @@ export function useTable(tableIdString: string) {
             `${shortenAddress(event.player)} placed a card`,
             event.player,
           );
-          fetchTable(false);
+          debouncedFetchTable();
           break;
         }
 
@@ -1284,7 +1291,7 @@ export function useTable(tableIdString: string) {
             `${shortenAddress(event.caller)} called LIAR!`,
             event.caller,
           );
-          fetchTable(false);
+          debouncedFetchTable();
           break;
         }
 
@@ -1294,7 +1301,7 @@ export function useTable(tableIdString: string) {
             `${shortenAddress(event.player)} was eliminated!`,
             event.player,
           );
-          fetchTable(false);
+          debouncedFetchTable();
           break;
         }
 
@@ -1305,7 +1312,7 @@ export function useTable(tableIdString: string) {
             event.player,
           );
           setCurrentTurnPlayer(event.next);
-          fetchTable(false);
+          debouncedFetchTable();
           break;
         }
 
@@ -1315,18 +1322,18 @@ export function useTable(tableIdString: string) {
             `${shortenAddress(event.player)} fired an empty bullet - safe!`,
             event.player,
           );
-          fetchTable(false);
+          debouncedFetchTable();
           break;
         }
 
         case "liarsTableCreated": {
           addEventLog("liarsTableCreated", "Table created");
-          fetchTable(false);
+          debouncedFetchTable();
           break;
         }
       }
     },
-    [fetchTable, addEventLog],
+    [debouncedFetchTable, addEventLog],
   );
 
   // Stable ref for the event handler (avoids re-creating addEventListener subscriptions)
@@ -1350,7 +1357,7 @@ export function useTable(tableIdString: string) {
     activeAnimation: wsAnimation,
   } = useGameEvents({
     tableId: tableIdString,
-    onRefetchTable: () => fetchTable(false),
+    onRefetchTable: () => debouncedFetchTable(),
     onGameEvent: (event) => handleGameEventRef.current(event),
     onCardsShuffled: (_next) => {
       // Cards were shuffled for our wallet — decrypt flow handled by auto-decrypt effect
@@ -1425,6 +1432,16 @@ export function useTable(tableIdString: string) {
     ? tableData?.playerInfos.find((p) => p.address === publicKey.toString())
         ?.encryptedCards || []
     : [];
+
+  // ── Clear stale myCards when on-chain cards are gone ─────────
+  // Handles race conditions where roundStarted fires mid-decryption
+  // or cache outlives its on-chain counterpart.
+  useEffect(() => {
+    if (gameState !== "playing") return;
+    if (myEncryptedCards.length === 0 && myCards.length > 0 && !isDecryptingCards) {
+      setMyCards([]);
+    }
+  }, [gameState, myEncryptedCards.length, myCards.length, isDecryptingCards]);
 
   // ── Load cached decrypted cards or trigger decrypt ───────────
   useEffect(() => {

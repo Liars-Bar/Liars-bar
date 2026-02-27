@@ -100,7 +100,9 @@ export type GameEventPayload =
   | { type: "cardPlaced"; tableId: string; player: string }
   | { type: "liarCalled"; tableId: string; caller: string }
   | { type: "emptyBulletFired"; tableId: string; player: string }
-  | { type: "playerEleminated"; tableId: string; player: string };
+  | { type: "playerEleminated"; tableId: string; player: string }
+  | { type: "gameOver"; tableId: string }
+  | { type: "gameWinner"; tableId: string; player: string };
 
 // ============================================================================
 // ANIMATION TRIGGER TYPES

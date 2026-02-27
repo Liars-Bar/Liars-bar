@@ -136,6 +136,14 @@ function mapDecodedToPayload(
         tableId: d.tableId.toString(),
         player: d.player.toString(),
       };
+    case "gameOver":
+      return { type: "gameOver", tableId: d.tableId.toString() };
+    case "gameWinner":
+      return {
+        type: "gameWinner",
+        tableId: d.tableId.toString(),
+        player: d.player.toString(),
+      };
     default:
       return null;
   }
@@ -233,6 +241,13 @@ export function useGameEvents({
           player = event.player;
           message = `${shorten(event.player)} was eliminated!`;
           animationType = "player-eliminated";
+          break;
+        case "gameOver":
+          message = "Game over!";
+          break;
+        case "gameWinner":
+          player = event.player;
+          message = `${shorten(event.player)} wins the game!`;
           break;
       }
 

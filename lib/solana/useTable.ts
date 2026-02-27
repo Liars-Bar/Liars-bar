@@ -132,11 +132,25 @@ async function confirmWithTimeout(
     ),
     new Promise<never>((_, reject) =>
       setTimeout(
-        () => reject(new Error("Transaction timed out after 60s. Check your wallet or Solscan.")),
+        () =>
+          reject(
+            new Error(
+              "Transaction timed out after 60s. Check your wallet or Solscan.",
+            ),
+          ),
         timeoutMs,
-      )
+      ),
     ),
   ]);
+}
+
+// Extract u128 handle from Anchor-deserialized Euint128 tuple struct
+function extractHandle(euint128: any): bigint {
+  if (euint128 && euint128._bn) return BigInt(euint128.toString());
+  if (euint128 && euint128["0"]) return BigInt(euint128["0"].toString());
+  if (Array.isArray(euint128) && euint128.length > 0)
+    return BigInt(euint128[0].toString());
+  return BigInt(0);
 }
 
 // Decrypted card for display
@@ -159,7 +173,10 @@ function getEncryptedFingerprint(encryptedCards: any[]): string {
   // Build a fingerprint from encrypted card handles so cache invalidates on new round
   try {
     return encryptedCards
-      .map((c: any) => `${c?.shape?.toString?.() ?? ""}:${c?.value?.toString?.() ?? ""}`)
+      .map(
+        (c: any) =>
+          `${c?.shape?.toString?.() ?? ""}:${c?.value?.toString?.() ?? ""}`,
+      )
       .join("|");
   } catch {
     return "";
@@ -180,7 +197,10 @@ function loadCachedCards(
     const currentFingerprint = getEncryptedFingerprint(encryptedCards);
 
     if (cached.fingerprint === currentFingerprint && cached.cards.length > 0) {
-      console.log("[Cache] Loaded cached decrypted cards:", cached.cards.length);
+      console.log(
+        "[Cache] Loaded cached decrypted cards:",
+        cached.cards.length,
+      );
       return cached.cards;
     }
     // Fingerprint mismatch — new round / different cards
@@ -265,12 +285,15 @@ export function useTable(tableIdString: string) {
   const [shuffleTurn, setShuffleTurn] = useState<number>(-1); // -1 means no one should shuffle
 
   // Animation state from WebSocket events
-  const [activeAnimation, setActiveAnimation] = useState<AnimationTrigger | null>(null);
+  const [activeAnimation, setActiveAnimation] =
+    useState<AnimationTrigger | null>(null);
 
   // Card decryption state
   const [myCards, setMyCards] = useState<DecryptedCard[]>([]);
   const [isDecryptingCards, setIsDecryptingCards] = useState(false);
   const [decryptFailed, setDecryptFailed] = useState(false);
+  // Maps "shapeHandle:valueHandle" → DecryptedCard so we can rebuild myCards from on-chain state
+  const cardHandleMap = useRef<Map<string, DecryptedCard>>(new Map());
 
   // Track last claim (who placed cards last)
   const [lastClaimBy, setLastClaimBy] = useState<string | null>(null);
@@ -286,6 +309,14 @@ export function useTable(tableIdString: string) {
     const [tableAddress] = PublicKey.findProgramAddressSync(
       [Buffer.from("table"), tableId.toArrayLike(Buffer, "le", 16)],
       PROGRAM_ID,
+    );
+    console.log("[DEBUG] PROGRAM_ID:", PROGRAM_ID.toBase58());
+    console.log("[DEBUG] Table PDA:", tableAddress.toBase58());
+    console.log(
+      "[DEBUG] tableId BN:",
+      tableId.toString(),
+      "hex:",
+      tableId.toArrayLike(Buffer, "le", 16).toString("hex"),
     );
     return tableAddress;
   }, [tableIdString]);
@@ -331,6 +362,10 @@ export function useTable(tableIdString: string) {
           commitment: "confirmed",
         });
         const program = new Program(IDL as any, provider);
+        console.log(
+          "[DEBUG] Anchor program.programId:",
+          program.programId.toBase58(),
+        );
 
         const table = await (program.account as any).liarsTable.fetch(
           tableAddress,
@@ -352,6 +387,12 @@ export function useTable(tableIdString: string) {
                   new PublicKey(address).toBuffer(),
                 ],
                 PROGRAM_ID,
+              );
+              console.log(
+                "[DEBUG] Player PDA for",
+                address,
+                ":",
+                playerPDA.toBase58(),
               );
 
               // Fetch player account
@@ -381,7 +422,9 @@ export function useTable(tableIdString: string) {
           isOpen: table.isOpen,
           tableCard: table.tableCard,
           trunToPlay: table.trunToPlay,
-          cardsOnTable: Array.isArray(table.cardsOnTable) ? table.cardsOnTable.length : 0,
+          cardsOnTable: Array.isArray(table.cardsOnTable)
+            ? table.cardsOnTable.length
+            : 0,
         };
         tableDataRef.current = newTableData;
         setTableData(newTableData);
@@ -491,6 +534,18 @@ export function useTable(tableIdString: string) {
           microLamports: 1000,
         });
 
+        console.log(
+          "[DEBUG][joinTable] program.programId:",
+          program.programId.toBase58(),
+        );
+        console.log("[DEBUG][joinTable] table PDA:", tableAddress.toBase58());
+        console.log("[DEBUG][joinTable] player PDA:", playerAddress.toBase58());
+        console.log("[DEBUG][joinTable] signer:", publicKey.toBase58());
+        console.log(
+          "[DEBUG][joinTable] INCO_LIGHTNING_PROGRAM_ID:",
+          INCO_LIGHTNING_PROGRAM_ID.toBase58(),
+        );
+
         const txBuilder = (program.methods as any)
           .joinTable(tableId, characterId)
           .accounts({
@@ -503,6 +558,19 @@ export function useTable(tableIdString: string) {
           .preInstructions([computeUnitLimit, computeUnitPrice]);
 
         const transaction: Transaction = await txBuilder.transaction();
+        // Log all instructions in the transaction to see which program IDs are used
+        console.log("[DEBUG][joinTable] Transaction instructions:");
+        transaction.instructions.forEach((ix, i) => {
+          console.log(`  ix[${i}] programId: ${ix.programId.toBase58()}`);
+          console.log(
+            `  ix[${i}] keys:`,
+            ix.keys.map((k) => ({
+              pubkey: k.pubkey.toBase58(),
+              isSigner: k.isSigner,
+              isWritable: k.isWritable,
+            })),
+          );
+        });
         const { blockhash, lastValidBlockHeight } =
           await connection.getLatestBlockhash("confirmed");
         transaction.recentBlockhash = blockhash;
@@ -528,7 +596,12 @@ export function useTable(tableIdString: string) {
           maxRetries: 3,
         });
 
-        await confirmWithTimeout(connection, tx, blockhash, lastValidBlockHeight);
+        await confirmWithTimeout(
+          connection,
+          tx,
+          blockhash,
+          lastValidBlockHeight,
+        );
 
         await fetchTable();
         return true;
@@ -713,7 +786,13 @@ export function useTable(tableIdString: string) {
   // Decrypt current player's cards
   // Full flow from working test: fetch player -> extract handles -> derive allowance PDAs -> grantCardAccess -> wait -> decrypt
   const decryptMyCards = useCallback(async (): Promise<DecryptedCard[]> => {
-    if (!publicKey || !signMessage || !signTransaction || !anchorWallet || !sendTransaction) {
+    if (
+      !publicKey ||
+      !signMessage ||
+      !signTransaction ||
+      !anchorWallet ||
+      !sendTransaction
+    ) {
       return [];
     }
 
@@ -739,15 +818,6 @@ export function useTable(tableIdString: string) {
       const player = await (program.account as any).player.fetch(playerAddress);
       if (!player.cards || player.cards.length === 0) {
         return [];
-      }
-
-      // Helper: extract u128 handle from Anchor-deserialized Euint128 tuple struct
-      function extractHandle(euint128: any): bigint {
-        if (euint128 && euint128._bn) return BigInt(euint128.toString());
-        if (euint128 && euint128["0"]) return BigInt(euint128["0"].toString());
-        if (Array.isArray(euint128) && euint128.length > 0)
-          return BigInt(euint128[0].toString());
-        return BigInt(0);
       }
 
       // Helper: derive allowance PDA from handle + allowed address
@@ -815,12 +885,20 @@ export function useTable(tableIdString: string) {
       grantTx.feePayer = publicKey;
 
       const signedGrantTx = await signTransaction!(grantTx);
-      const grantSig = await connection.sendRawTransaction(signedGrantTx.serialize(), {
-        skipPreflight: true,
-        maxRetries: 5,
-      });
+      const grantSig = await connection.sendRawTransaction(
+        signedGrantTx.serialize(),
+        {
+          skipPreflight: true,
+          maxRetries: 5,
+        },
+      );
 
-      await confirmWithTimeout(connection, grantSig, blockhash, lastValidBlockHeight);
+      await confirmWithTimeout(
+        connection,
+        grantSig,
+        blockhash,
+        lastValidBlockHeight,
+      );
 
       // 4. Wait for TEE to process the allowances
       await new Promise((r) => setTimeout(r, 3000));
@@ -835,10 +913,20 @@ export function useTable(tableIdString: string) {
 
         const shapeIdx = parseInt(result.plaintexts[0]);
         const valueIdx = parseInt(result.plaintexts[1]);
-        decryptedCards.push({ shape: shapeIdx, value: valueIdx });
+        const decryptedCard: DecryptedCard = {
+          shape: shapeIdx,
+          value: valueIdx,
+        };
+        decryptedCards.push(decryptedCard);
+
+        // Store handle → decrypted mapping so placeCards can rebuild from on-chain state
+        cardHandleMap.current.set(
+          `${handles[i].shape}:${handles[i].value}`,
+          decryptedCard,
+        );
 
         // Update state immediately so UI reveals this card
-        setMyCards((prev) => [...prev, { shape: shapeIdx, value: valueIdx }]);
+        setMyCards((prev) => [...prev, decryptedCard]);
       }
 
       // Cache decrypted cards to localStorage
@@ -912,6 +1000,15 @@ export function useTable(tableIdString: string) {
       });
 
       // STEP 1: Simulate transaction to extract handles
+      console.log(
+        "[DEBUG][shuffleCards] program.programId:",
+        program.programId.toBase58(),
+      );
+      console.log("[DEBUG][shuffleCards] table PDA:", tableAddress.toBase58());
+      console.log(
+        "[DEBUG][shuffleCards] player PDA:",
+        playerAddress.toBase58(),
+      );
 
       const simulateTxBuilder = (program.methods as any)
         .suffleCards(tableId)
@@ -981,7 +1078,10 @@ export function useTable(tableIdString: string) {
           "confirmed",
         ),
         new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("Transaction timed out after 60s.")), 60_000)
+          setTimeout(
+            () => reject(new Error("Transaction timed out after 60s.")),
+            60_000,
+          ),
         ),
       ]);
 
@@ -1031,6 +1131,13 @@ export function useTable(tableIdString: string) {
         return false;
       }
 
+      // Guard: all players must finish shuffling before cards can be placed
+      const playersCount = tableDataRef.current?.players.length ?? 0;
+      if (playersCount > 0 && shuffleTurn >= 0 && shuffleTurn < playersCount) {
+        setError("Waiting for all players to finish shuffling cards.");
+        return false;
+      }
+
       setIsPlacingCards(true);
       setError(null);
 
@@ -1053,14 +1160,22 @@ export function useTable(tableIdString: string) {
         );
 
         // Pre-validate: ensure player has cards on-chain before sending tx
-        const playerAccount = await (program.account as any).player.fetch(playerAddress);
+        const playerAccount = await (program.account as any).player.fetch(
+          playerAddress,
+        );
         if (!playerAccount.cards || playerAccount.cards.length === 0) {
-          setError("Your hand is empty — cards haven't been dealt yet. Please wait for the shuffle to complete.");
+          setError(
+            "Your hand is empty — cards haven't been dealt yet. Please wait for the shuffle to complete.",
+          );
           setMyCards([]);
           return false;
         }
-        if (pickedIndices.some((idx) => idx >= playerAccount.cards.length)) {
+        if (
+          pickedIndices.length > playerAccount.cards.length ||
+          pickedIndices.some((idx) => idx >= playerAccount.cards.length)
+        ) {
           setError("Card selection is out of sync. Refreshing table data...");
+          setMyCards([]);
           await fetchTable(false);
           return false;
         }
@@ -1074,6 +1189,16 @@ export function useTable(tableIdString: string) {
 
         // Convert picked indices to bytes buffer
         const pickedIndexsBuffer = Buffer.from(pickedIndices);
+
+        console.log(
+          "[DEBUG][placeCards] program.programId:",
+          program.programId.toBase58(),
+        );
+        console.log("[DEBUG][placeCards] table PDA:", tableAddress.toBase58());
+        console.log(
+          "[DEBUG][placeCards] player PDA:",
+          playerAddress.toBase58(),
+        );
 
         const txBuilder = (program.methods as any)
           .placeCards(tableId, pickedIndexsBuffer)
@@ -1098,12 +1223,24 @@ export function useTable(tableIdString: string) {
           maxRetries: 3,
         });
 
-        await confirmWithTimeout(connection, tx, blockhash, lastValidBlockHeight);
-
-        // Remove played cards from local state
-        setMyCards((prev) =>
-          prev.filter((_, idx) => !pickedIndices.includes(idx)),
+        await confirmWithTimeout(
+          connection,
+          tx,
+          blockhash,
+          lastValidBlockHeight,
         );
+
+        // Pull fresh player account from chain and rebuild myCards from it
+        const freshPlayer = await (program.account as any).player.fetch(
+          playerAddress,
+        );
+        const freshMyCards: DecryptedCard[] = (freshPlayer.cards ?? [])
+          .map((card: any) => {
+            const key = `${extractHandle(card.shape)}:${extractHandle(card.value)}`;
+            return cardHandleMap.current.get(key) ?? null;
+          })
+          .filter(Boolean) as DecryptedCard[];
+        setMyCards(freshMyCards);
 
         await fetchTable(false);
         return true;
@@ -1123,10 +1260,11 @@ export function useTable(tableIdString: string) {
       tableIdString,
       getTableAddress,
       fetchTable,
+      shuffleTurn,
     ],
   );
 
-  // Call liar on the previous player (uses placeCards with empty indices)
+  // Call liar on the previous player (dedicated liarsCall instruction)
   const callLiar = useCallback(async (): Promise<boolean> => {
     if (!publicKey || !anchorWallet || !signTransaction) {
       setError("Wallet not connected");
@@ -1161,15 +1299,12 @@ export function useTable(tableIdString: string) {
         microLamports: 1000,
       });
 
-      // Call liar = placeCards with empty indices
-      const emptyBuffer = Buffer.from([]);
-
       const txBuilder = (program.methods as any)
-        .placeCards(tableId, emptyBuffer)
+        .liarsCall(tableId)
         .accounts({
-          user: publicKey,
+          signer: publicKey,
           table: tableAddress,
-          player: playerAddress,
+          players: playerAddress,
           systemProgram: SystemProgram.programId,
           incoLightningProgram: INCO_LIGHTNING_PROGRAM_ID,
         } as any)
@@ -1331,6 +1466,24 @@ export function useTable(tableIdString: string) {
           debouncedFetchTable();
           break;
         }
+
+        case "gameOver": {
+          setIsOver(true);
+          setGameState("ended");
+          addEventLog("gameOver", "Game over!");
+          debouncedFetchTable();
+          break;
+        }
+
+        case "gameWinner": {
+          addEventLog(
+            "gameWinner",
+            `${shortenAddress(event.player)} wins the game!`,
+            event.player,
+          );
+          debouncedFetchTable();
+          break;
+        }
       }
     },
     [debouncedFetchTable, addEventLog],
@@ -1352,10 +1505,7 @@ export function useTable(tableIdString: string) {
   });
 
   // ── Anchor addEventListener-based event system (single source of truth) ──
-  const {
-    eventLog: wsEventLog,
-    activeAnimation: wsAnimation,
-  } = useGameEvents({
+  const { eventLog: wsEventLog, activeAnimation: wsAnimation } = useGameEvents({
     tableId: tableIdString,
     onRefetchTable: () => debouncedFetchTable(),
     onGameEvent: (event) => handleGameEventRef.current(event),
@@ -1438,14 +1588,19 @@ export function useTable(tableIdString: string) {
   // or cache outlives its on-chain counterpart.
   useEffect(() => {
     if (gameState !== "playing") return;
-    if (myEncryptedCards.length === 0 && myCards.length > 0 && !isDecryptingCards) {
+    if (
+      myEncryptedCards.length === 0 &&
+      myCards.length > 0 &&
+      !isDecryptingCards
+    ) {
       setMyCards([]);
     }
   }, [gameState, myEncryptedCards.length, myCards.length, isDecryptingCards]);
 
   // ── Load cached decrypted cards or trigger decrypt ───────────
   useEffect(() => {
-    if (!publicKey || myEncryptedCards.length === 0 || myCards.length > 0) return;
+    if (!publicKey || myEncryptedCards.length === 0 || myCards.length > 0)
+      return;
     if (isDecryptingCards || decryptFailed) return;
     if (gameState !== "playing") return;
 
@@ -1460,7 +1615,16 @@ export function useTable(tableIdString: string) {
       // Not in cache — trigger decryption
       decryptMyCards();
     }
-  }, [publicKey, tableIdString, myEncryptedCards, myCards.length, gameState, isDecryptingCards, decryptFailed, decryptMyCards]);
+  }, [
+    publicKey,
+    tableIdString,
+    myEncryptedCards,
+    myCards.length,
+    gameState,
+    isDecryptingCards,
+    decryptFailed,
+    decryptMyCards,
+  ]);
 
   return {
     // Table data

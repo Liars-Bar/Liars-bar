@@ -217,6 +217,89 @@ export type LiarsBarDapp = {
       ]
     },
     {
+      "name": "liarsCall",
+      "discriminator": [
+        102,
+        159,
+        213,
+        9,
+        226,
+        61,
+        66,
+        85
+      ],
+      "accounts": [
+        {
+          "name": "signer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "table",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  97,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "tableId"
+              }
+            ]
+          }
+        },
+        {
+          "name": "players",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  108,
+                  97,
+                  121,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "tableId"
+              },
+              {
+                "kind": "account",
+                "path": "signer"
+              }
+            ]
+          }
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "incoLightningProgram",
+          "address": "5sjEbPiqgZrYwR31ahR6Uk9wf5awoX61YGg7jExQSwaj"
+        }
+      ],
+      "args": [
+        {
+          "name": "tableId",
+          "type": "u128"
+        }
+      ]
+    },
+    {
       "name": "placeCards",
       "discriminator": [
         252,
@@ -609,6 +692,32 @@ export type LiarsBarDapp = {
       ]
     },
     {
+      "name": "gameOver",
+      "discriminator": [
+        122,
+        28,
+        20,
+        209,
+        123,
+        166,
+        111,
+        64
+      ]
+    },
+    {
+      "name": "gameWinner",
+      "discriminator": [
+        140,
+        179,
+        49,
+        235,
+        98,
+        122,
+        213,
+        148
+      ]
+    },
+    {
       "name": "liarCalled",
       "discriminator": [
         55,
@@ -698,32 +807,6 @@ export type LiarsBarDapp = {
         49,
         165
       ]
-    },
-    {
-      "name": "gameOver",
-      "discriminator": [
-        122,
-        28,
-        20,
-        209,
-        123,
-        166,
-        111,
-        64
-      ]
-    },
-    {
-      "name": "gameWinner",
-      "discriminator": [
-        140,
-        179,
-        49,
-        235,
-        98,
-        122,
-        213,
-        148
-      ]
     }
   ],
   "errors": [
@@ -756,6 +839,11 @@ export type LiarsBarDapp = {
       "code": 6005,
       "name": "needTwoPlayer",
       "msg": "Need At Least Two Player"
+    },
+    {
+      "code": 6006,
+      "name": "shuffleNotComplete",
+      "msg": "All players must shuffle before playing"
     }
   ],
   "types": [
@@ -796,6 +884,33 @@ export type LiarsBarDapp = {
             "name": "player",
             "type": "pubkey"
           }
+        ]
+      }
+    },
+    {
+      "name": "deckRow",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "values",
+            "type": {
+              "vec": {
+                "defined": {
+                  "name": "ebool"
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "ebool",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          "u128"
         ]
       }
     },
@@ -885,7 +1000,9 @@ export type LiarsBarDapp = {
             "name": "deck",
             "type": {
               "vec": {
-                "vec": "bool"
+                "defined": {
+                  "name": "deckRow"
+                }
               }
             }
           },
@@ -1146,6 +1263,40 @@ export const IDL: LiarsBarDapp = {
       ]
     },
     {
+      "name": "liarsCall",
+      "discriminator": [102, 159, 213, 9, 226, 61, 66, 85],
+      "accounts": [
+        { "name": "signer", "writable": true, "signer": true },
+        {
+          "name": "table",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              { "kind": "const", "value": [116, 97, 98, 108, 101] },
+              { "kind": "arg", "path": "tableId" }
+            ]
+          }
+        },
+        {
+          "name": "players",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              { "kind": "const", "value": [112, 108, 97, 121, 101, 114] },
+              { "kind": "arg", "path": "tableId" },
+              { "kind": "account", "path": "signer" }
+            ]
+          }
+        },
+        { "name": "systemProgram", "address": "11111111111111111111111111111111" },
+        {
+          "name": "incoLightningProgram",
+          "address": "5sjEbPiqgZrYwR31ahR6Uk9wf5awoX61YGg7jExQSwaj"
+        }
+      ],
+      "args": [{ "name": "tableId", "type": "u128" }]
+    },
+    {
       "name": "placeCards",
       "discriminator": [252, 174, 93, 119, 26, 166, 62, 46],
       "accounts": [
@@ -1292,15 +1443,15 @@ export const IDL: LiarsBarDapp = {
   "events": [
     { "name": "cardPlaced", "discriminator": [246, 134, 49, 112, 59, 114, 154, 29] },
     { "name": "emptyBulletFired", "discriminator": [110, 29, 145, 237, 75, 13, 174, 243] },
+    { "name": "gameOver", "discriminator": [122, 28, 20, 209, 123, 166, 111, 64] },
+    { "name": "gameWinner", "discriminator": [140, 179, 49, 235, 98, 122, 213, 148] },
     { "name": "liarCalled", "discriminator": [55, 202, 78, 94, 104, 9, 34, 165] },
     { "name": "liarsTableCreated", "discriminator": [15, 186, 232, 22, 95, 188, 13, 127] },
     { "name": "playerEleminated", "discriminator": [70, 10, 205, 125, 189, 194, 189, 217] },
     { "name": "playerJoined", "discriminator": [39, 144, 49, 106, 108, 210, 183, 38] },
     { "name": "roundStarted", "discriminator": [180, 209, 2, 244, 238, 48, 170, 120] },
     { "name": "suffleCardsForPlayer", "discriminator": [127, 195, 85, 107, 182, 62, 225, 216] },
-    { "name": "tableTrun", "discriminator": [87, 20, 99, 18, 166, 189, 49, 165] },
-    { "name": "gameOver", "discriminator": [122, 28, 20, 209, 123, 166, 111, 64] },
-    { "name": "gameWinner", "discriminator": [140, 179, 49, 235, 98, 122, 213, 148] }
+    { "name": "tableTrun", "discriminator": [87, 20, 99, 18, 166, 189, 49, 165] }
   ],
   "errors": [
     { "code": 6000, "name": "tableAlreadyInitialized", "msg": "Table Already Initialized" },
@@ -1308,7 +1459,8 @@ export const IDL: LiarsBarDapp = {
     { "code": 6002, "name": "notYourTrunSuffle", "msg": "Not your trun to call suffle you scripter" },
     { "code": 6003, "name": "notYourTrun", "msg": "Not Your Trun to play you scripter" },
     { "code": 6004, "name": "notEligible", "msg": "You are Not Eligible for this call" },
-    { "code": 6005, "name": "needTwoPlayer", "msg": "Need At Least Two Player" }
+    { "code": 6005, "name": "needTwoPlayer", "msg": "Need At Least Two Player" },
+    { "code": 6006, "name": "shuffleNotComplete", "msg": "All players must shuffle before playing" }
   ],
   "types": [
     {
@@ -1330,6 +1482,14 @@ export const IDL: LiarsBarDapp = {
           { "name": "player", "type": "pubkey" }
         ]
       }
+    },
+    {
+      "name": "deckRow",
+      "type": { "kind": "struct", "fields": [{ "name": "values", "type": { "vec": { "defined": { "name": "ebool" } } } }] }
+    },
+    {
+      "name": "ebool",
+      "type": { "kind": "struct", "fields": ["u128"] }
     },
     {
       "name": "emptyBulletFired",
@@ -1367,7 +1527,7 @@ export const IDL: LiarsBarDapp = {
           { "name": "isOpen", "type": "bool" },
           { "name": "isOver", "type": "bool" },
           { "name": "players", "type": { "vec": "pubkey" } },
-          { "name": "deck", "type": { "vec": { "vec": "bool" } } },
+          { "name": "deck", "type": { "vec": { "defined": { "name": "deckRow" } } } },
           { "name": "trunToPlay", "type": "u8" },
           { "name": "suffleTrun", "type": "u8" },
           { "name": "playerCardsLeft", "type": "bytes" }

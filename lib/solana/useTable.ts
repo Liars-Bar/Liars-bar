@@ -263,6 +263,7 @@ export interface TableData {
   trunToPlay: number;
   cardsOnTable: number; // count of encrypted cards placed on the table
   remainingBullets: number[]; // bullets remaining per player (6-round gun)
+  playerCardsLeft: number[]; // cards remaining per player
 }
 
 export function useTable(tableIdString: string) {
@@ -306,6 +307,11 @@ export function useTable(tableIdString: string) {
   const [liarCaller, setLiarCaller] = useState<string | null>(null);
   const [isOver, setIsOver] = useState(false);
   const { signMessage } = useWallet();
+
+  // Bullet count for current player (computed from table PDA on every fetch)
+  const [myBulletsLeft, setMyBulletsLeft] = useState<number>(6);
+  // Card count for current player (computed from table PDA on every fetch)
+  const [myCardsLeft, setMyCardsLeft] = useState<number>(0);
 
   // Derive table PDA
   const getTableAddress = useCallback(() => {
@@ -431,11 +437,26 @@ export function useTable(tableIdString: string) {
           cardsOnTable: Array.isArray(table.cardsOnTable)
             ? table.cardsOnTable.length
             : 0,
-          remainingBullets: Array.isArray(table.remainingBullet)
-            ? table.remainingBullet.map((b: any) => Number(b))
+          remainingBullets: table.remainingBullet
+            ? Array.from(table.remainingBullet).map((b: any) => Number(b))
+            : [],
+          playerCardsLeft: table.playerCardsLeft
+            ? Array.from(table.playerCardsLeft).map((c: any) => Number(c))
             : [],
         };
         console.log("[DEBUG] remainingBullets:", newTableData.remainingBullets, "raw:", table.remainingBullet);
+
+        // Compute my bullet count: find my index in players, grab remainingBullets[myIdx]
+        if (publicKey) {
+          const myIdx = playerAddresses.findIndex((p: string) => p === publicKey.toString());
+          if (myIdx >= 0 && newTableData.remainingBullets[myIdx] != null) {
+            setMyBulletsLeft(newTableData.remainingBullets[myIdx]);
+          }
+          if (myIdx >= 0 && newTableData.playerCardsLeft[myIdx] != null) {
+            setMyCardsLeft(newTableData.playerCardsLeft[myIdx]);
+          }
+        }
+
         tableDataRef.current = newTableData;
         setTableData(newTableData);
 
@@ -1681,6 +1702,8 @@ export function useTable(tableIdString: string) {
     isPlayerInTable,
     canStart,
     takenCharacters,
+    myBulletsLeft,
+    myCardsLeft,
 
     // Shuffle state
     shuffleTurn,

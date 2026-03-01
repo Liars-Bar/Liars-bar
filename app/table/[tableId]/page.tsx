@@ -234,6 +234,8 @@ export default function RetroTablePage() {
     error,
     isPlayerInTable,
     takenCharacters,
+    myBulletsLeft,
+    myCardsLeft,
     joinTable,
     isJoining,
     startRound,
@@ -373,6 +375,9 @@ export default function RetroTablePage() {
       const bulletsLeft = tableData?.remainingBullets && playerIndex >= 0
         ? tableData.remainingBullets[playerIndex]
         : undefined;
+      const cardsLeft = tableData?.playerCardsLeft && playerIndex >= 0
+        ? tableData.playerCardsLeft[playerIndex]
+        : undefined;
 
       return {
         address: playerInfo.address,
@@ -385,6 +390,7 @@ export default function RetroTablePage() {
         left: pos.left,
         isCurrentPlayer: playerInfo.address === publicKey?.toString(),
         bulletsLeft: gameState === "playing" ? bulletsLeft : undefined,
+        cardsLeft: gameState === "playing" ? cardsLeft : undefined,
       };
     },
   );
@@ -1101,6 +1107,22 @@ export default function RetroTablePage() {
                       pointerEvents: isEliminated ? "none" : undefined,
                     }}
                   >
+                    {/* Remaining bullets above avatar */}
+                    {player.bulletsLeft != null && !isEliminated && (
+                      <span
+                        className="text-[7px] sm:text-[8px] font-bold tracking-wider mb-0.5"
+                        style={{
+                          color: player.bulletsLeft > 2 ? "#fbbf24" : player.bulletsLeft > 0 ? "#ef4444" : "#555",
+                          textShadow: player.bulletsLeft > 2
+                            ? "0 0 4px #fbbf2480"
+                            : player.bulletsLeft > 0
+                              ? "0 0 4px #ef444480"
+                              : "none",
+                        }}
+                      >
+                        {player.bulletsLeft}/6
+                      </span>
+                    )}
                     {isTurnPlayer && !isEliminated && (
                       <span className="neon-amber text-[6px] mb-1 blink tracking-wider">
                         TURN
@@ -1179,6 +1201,20 @@ export default function RetroTablePage() {
                           />
                         ))}
                       </div>
+                    )}
+                    {/* Cards remaining indicator */}
+                    {player.cardsLeft != null && !isEliminated && (
+                      <span
+                        className="text-[6px] sm:text-[7px] font-bold tracking-wider mt-0.5"
+                        style={{
+                          color: player.cardsLeft > 2 ? "#60a5fa" : player.cardsLeft > 0 ? "#f87171" : "#555",
+                          textShadow: player.cardsLeft > 0
+                            ? `0 0 4px ${player.cardsLeft > 2 ? "#60a5fa80" : "#f8717180"}`
+                            : "none",
+                        }}
+                      >
+                        {player.cardsLeft} CARDS
+                      </span>
                     )}
                   </div>
                 );
@@ -1661,47 +1697,60 @@ export default function RetroTablePage() {
         >
           {/* Gun + Revolver cylinder - top */}
           {(() => {
-            const bullets = myPlayer.bulletsLeft ?? 6;
-            const radius = 17;
+            const bullets = myBulletsLeft;
+            const radius = 13;
             return (
-              <div className="flex items-center gap-1.5">
-                {/* Revolver image */}
-                <div
-                  className="w-10 h-10 sm:w-12 sm:h-12 flex-shrink-0 overflow-hidden"
-                  style={{
-                    imageRendering: "pixelated",
-                    filter: `drop-shadow(0 0 6px ${myPlayer.color}50)`,
-                  }}
-                >
-                  <Image
-                    src="/gun/revolver.png"
-                    alt="Revolver"
-                    width={48}
-                    height={48}
-                    className="w-full h-full object-contain"
-                    style={{ imageRendering: "pixelated" }}
-                  />
-                </div>
-                {/* Cylinder */}
-                <div className="revolver-cylinder" style={{ borderColor: myPlayer.color + "60" }}>
-                  <div className="revolver-cylinder-inner">
-                    {Array.from({ length: 6 }).map((_, i) => {
-                      const angle = (i * 60 - 90) * (Math.PI / 180);
-                      const x = radius * Math.cos(angle);
-                      const y = radius * Math.sin(angle);
-                      const isLive = i < bullets;
-                      return (
-                        <div
-                          key={i}
-                          className={`revolver-chamber ${isLive ? "revolver-chamber-live" : "revolver-chamber-empty"}`}
-                          style={{
-                            transform: `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`,
-                          }}
-                        />
-                      );
-                    })}
+              <div className="flex flex-col items-center">
+                <div className="flex items-center gap-1.5">
+                  {/* Revolver image */}
+                  <div
+                    className="w-[62px] h-[62px] sm:w-[70px] sm:h-[70px] flex-shrink-0 overflow-hidden"
+                    style={{
+                      imageRendering: "pixelated",
+                      filter: `drop-shadow(0 0 6px ${myPlayer.color}50)`,
+                    }}
+                  >
+                    <Image
+                      src="/gun/revolver.png"
+                      alt="Revolver"
+                      width={70}
+                      height={70}
+                      className="w-full h-full object-contain"
+                      style={{ imageRendering: "pixelated" }}
+                    />
                   </div>
-                  <div className="revolver-hub" />
+                  {/* Cylinder */}
+                  <div className="revolver-cylinder" style={{ borderColor: myPlayer.color + "60" }}>
+                    <div className="revolver-cylinder-inner">
+                      {Array.from({ length: 6 }).map((_, i) => {
+                        const angle = (-i * 60 - 90) * (Math.PI / 180);
+                        const x = radius * Math.cos(angle);
+                        const y = radius * Math.sin(angle);
+                        // Live bullets start at top (12 o'clock) going counter-clockwise
+                        // Empty/fired bullets end up on the right side
+                        const isLive = i < bullets;
+                        return (
+                          <div
+                            key={i}
+                            className={`revolver-chamber ${isLive ? "revolver-chamber-live" : "revolver-chamber-empty"}`}
+                            style={{
+                              transform: `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`,
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
+                    <div className="revolver-hub" />
+                  </div>
+                </div>
+                {/* Bullet count */}
+                <div className="text-center mt-1">
+                  <span
+                    className="text-[7px] sm:text-[8px] font-bold tracking-wider"
+                    style={{ color: bullets > 2 ? "#fbbf24" : bullets > 0 ? "#ef4444" : "#555" }}
+                  >
+                    {bullets}/6 ROUNDS
+                  </span>
                 </div>
               </div>
             );

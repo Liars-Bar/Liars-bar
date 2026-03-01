@@ -1017,8 +1017,8 @@
 
 .revolver-cylinder {
   position: relative;
-  width: 52px;
-  height: 52px;
+  width: 42px;
+  height: 42px;
   border-radius: 50%;
   background: radial-gradient(circle, #1a1a1a 30%, #0d0d0d 70%);
   border: 2px solid #333;
@@ -1029,13 +1029,12 @@
 .revolver-cylinder-inner {
   position: absolute;
   inset: 0;
-  animation: cylinder-spin 8s linear infinite;
 }
 
 .revolver-chamber {
   position: absolute;
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   top: 50%;
   left: 50%;
@@ -1059,10 +1058,114 @@
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   background: radial-gradient(circle at 40% 40%, #555, #222);
   border: 1px solid #444;
   z-index: 2;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   RESPONSIVE / MOBILE STYLES
+   ════════════════════════════════════════════════════════════════ */
+
+/* ── Mobile: cards smaller ─────────────────────────────────────── */
+@media (max-width: 639px) {
+  .retro-card-face {
+    width: 44px;
+    height: 64px;
+    min-width: 44px;
+    min-height: 64px;
+    font-size: 8px;
+  }
+  .retro-card-back {
+    width: 44px;
+    height: 64px;
+    min-width: 44px;
+    min-height: 64px;
+  }
+  .retro-btn {
+    padding: 8px 14px;
+    font-size: 9px;
+  }
+  .retro-table-emblem-diamond {
+    width: 36px;
+    height: 36px;
+  }
+
+  /* Smaller animation overlays on mobile */
+  .anim-liar-overlay {
+    padding: 10px 20px;
+  }
+  .anim-roulette-overlay {
+    padding: 10px 20px;
+  }
+  .anim-eliminated-overlay {
+    padding: 10px 20px;
+  }
+  .anim-round-start {
+    padding: 10px 24px;
+  }
+}
+
+/* ── Very small screens (< 480px) ──────────────────────────────── */
+@media (max-width: 479px) {
+  .retro-card-face {
+    width: 38px;
+    height: 56px;
+    min-width: 38px;
+    min-height: 56px;
+    font-size: 7px;
+  }
+  .retro-card-back {
+    width: 38px;
+    height: 56px;
+    min-width: 38px;
+    min-height: 56px;
+  }
+  .retro-btn {
+    padding: 6px 10px;
+    font-size: 8px;
+  }
+  .retro-loading-bar {
+    width: 150px;
+    height: 16px;
+  }
+}
+
+/* ── Floating player card responsive ───────────────────────────── */
+@media (max-width: 639px) {
+  .floating-player-card {
+    left: 4px !important;
+    bottom: 2% !important;
+    padding: 4px !important;
+    max-width: 120px;
+  }
+  .floating-player-card .revolver-cylinder {
+    width: 32px;
+    height: 32px;
+  }
+  .floating-player-card .revolver-chamber {
+    width: 7px;
+    height: 7px;
+  }
+  .floating-player-card .revolver-hub {
+    width: 7px;
+    height: 7px;
+  }
+}
+
+/* ── Sidebar responsive ────────────────────────────────────────── */
+@media (max-width: 767px) {
+  .game-sidebar {
+    width: 120px !important;
+    min-width: 120px;
+  }
+}
+@media (max-width: 479px) {
+  .game-sidebar {
+    width: 90px !important;
+    min-width: 90px;
+  }
 }

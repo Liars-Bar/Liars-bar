@@ -13,7 +13,7 @@ export function RetroWallet() {
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Hide on table pages — wallet info is in the floating player card
-  const isOnTablePage = pathname?.startsWith("/retro/table/");
+  const isOnTablePage = pathname?.startsWith("/table/");
 
   // Close dropdown on outside click
   useEffect(() => {

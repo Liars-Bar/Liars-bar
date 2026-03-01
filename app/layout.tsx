@@ -1,17 +1,14 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Press_Start_2P } from "next/font/google";
 import { WalletProvider } from "@/components/providers/WalletProvider";
-import { AppLayout } from "@/components/AppLayout";
+import { RetroWallet } from "./RetroWallet";
 import "./globals.css";
+import "./retro.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const pixelFont = Press_Start_2P({
+  weight: "400",
   subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+  variable: "--font-pixel",
 });
 
 export const metadata: Metadata = {
@@ -26,12 +23,26 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-        suppressHydrationWarning
-      >
+      <body suppressHydrationWarning>
         <WalletProvider>
-          <AppLayout>{children}</AppLayout>
+          <div
+            className={`${pixelFont.variable}`}
+            style={{
+              fontFamily: "var(--font-pixel), monospace",
+              height: "100dvh",
+              overflow: "hidden",
+              position: "relative",
+            }}
+          >
+            {/* CRT Scanline Overlay */}
+            <div className="crt-overlay" />
+            {/* Retro Wallet Connect — Top Right */}
+            <RetroWallet />
+            {/* Screen Content */}
+            <div className="crt-screen screen-flicker" style={{ height: "100%", overflow: "hidden" }}>
+              {children}
+            </div>
+          </div>
         </WalletProvider>
       </body>
     </html>

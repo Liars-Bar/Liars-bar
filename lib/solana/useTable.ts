@@ -262,6 +262,7 @@ export interface TableData {
   tableCard: number;
   trunToPlay: number;
   cardsOnTable: number; // count of encrypted cards placed on the table
+  remainingBullets: number[]; // bullets remaining per player (6-round gun)
 }
 
 export function useTable(tableIdString: string) {
@@ -294,6 +295,9 @@ export function useTable(tableIdString: string) {
   const [decryptFailed, setDecryptFailed] = useState(false);
   // Maps "shapeHandle:valueHandle" → DecryptedCard so we can rebuild myCards from on-chain state
   const cardHandleMap = useRef<Map<string, DecryptedCard>>(new Map());
+
+  // Decrypt prompt: shown after player shuffles, dismissed once decryption completes
+  const [showDecryptPopup, setShowDecryptPopup] = useState(false);
 
   // Track last claim (who placed cards last)
   const [lastClaimBy, setLastClaimBy] = useState<string | null>(null);
@@ -415,6 +419,8 @@ export function useTable(tableIdString: string) {
           }),
         );
 
+        console.log("[DEBUG] table.tableCard raw value:", table.tableCard);
+
         const newTableData = {
           tableId: table.tableId.toString(),
           players: playerAddresses,
@@ -425,7 +431,11 @@ export function useTable(tableIdString: string) {
           cardsOnTable: Array.isArray(table.cardsOnTable)
             ? table.cardsOnTable.length
             : 0,
+          remainingBullets: Array.isArray(table.remainingBullet)
+            ? table.remainingBullet.map((b: any) => Number(b))
+            : [],
         };
+        console.log("[DEBUG] remainingBullets:", newTableData.remainingBullets, "raw:", table.remainingBullet);
         tableDataRef.current = newTableData;
         setTableData(newTableData);
 
@@ -903,16 +913,18 @@ export function useTable(tableIdString: string) {
       // 4. Wait for TEE to process the allowances
       await new Promise((r) => setTimeout(r, 3000));
 
-      // 5. Decrypt one card at a time, updating state after each
+      // 5. Decrypt all card handles in a single batched call (up to 10 handles max)
+      const allCardHandles = handles.flatMap((h) => [h.shape, h.value]);
+      const result = await decrypt(allCardHandles, {
+        address: publicKey,
+        signMessage,
+      });
+
+      // Parse plaintexts: [shape0, value0, shape1, value1, ...]
       const decryptedCards: DecryptedCard[] = [];
       for (let i = 0; i < handles.length; i++) {
-        const result = await decrypt([handles[i].shape, handles[i].value], {
-          address: publicKey,
-          signMessage,
-        });
-
-        const shapeIdx = parseInt(result.plaintexts[0]);
-        const valueIdx = parseInt(result.plaintexts[1]);
+        const shapeIdx = parseInt(result.plaintexts[i * 2]);
+        const valueIdx = parseInt(result.plaintexts[i * 2 + 1]);
         const decryptedCard: DecryptedCard = {
           shape: shapeIdx,
           value: valueIdx,
@@ -924,10 +936,10 @@ export function useTable(tableIdString: string) {
           `${handles[i].shape}:${handles[i].value}`,
           decryptedCard,
         );
-
-        // Update state immediately so UI reveals this card
-        setMyCards((prev) => [...prev, decryptedCard]);
       }
+
+      // Update UI with all decrypted cards at once
+      setMyCards(decryptedCards);
 
       // Cache decrypted cards to localStorage
       saveCachedCards(
@@ -1094,6 +1106,9 @@ export function useTable(tableIdString: string) {
         }
         return false;
       }
+
+      // Show decrypt popup after successful shuffle
+      setShowDecryptPopup(true);
 
       await fetchTable(false);
       return true;
@@ -1384,11 +1399,14 @@ export function useTable(tableIdString: string) {
 
         case "roundStarted": {
           setGameState("playing");
+          // Clear everything — new round, no old cards
           setMyCards([]);
           setDecryptFailed(false);
           setLiarCaller(null);
           setLastClaimBy(null);
-          // Clear cached cards — new round means new encrypted cards
+          setShowDecryptPopup(false);
+          // Clear all previous card data — new round means new encrypted cards
+          cardHandleMap.current.clear();
           if (publicKey) {
             clearCardCache(tableIdString, publicKey.toString());
           }
@@ -1446,6 +1464,10 @@ export function useTable(tableIdString: string) {
             `Cards shuffled for ${shortenAddress(event.player)}, next: ${shortenAddress(event.next)}`,
             event.player,
           );
+          // Show decrypt popup once this player has shuffled
+          if (publicKey && event.player === publicKey.toString()) {
+            setShowDecryptPopup(true);
+          }
           setCurrentTurnPlayer(event.next);
           debouncedFetchTable();
           break;
@@ -1588,21 +1610,34 @@ export function useTable(tableIdString: string) {
   // or cache outlives its on-chain counterpart.
   useEffect(() => {
     if (gameState !== "playing") return;
-    if (
-      myEncryptedCards.length === 0 &&
-      myCards.length > 0 &&
-      !isDecryptingCards
-    ) {
-      setMyCards([]);
+    if (myEncryptedCards.length === 0 && !isDecryptingCards) {
+      if (myCards.length > 0) setMyCards([]);
+      if (showDecryptPopup) setShowDecryptPopup(false);
     }
-  }, [gameState, myEncryptedCards.length, myCards.length, isDecryptingCards]);
+  }, [gameState, myEncryptedCards.length, myCards.length, isDecryptingCards, showDecryptPopup]);
 
-  // ── Load cached decrypted cards or trigger decrypt ───────────
+  // ── Load cached decrypted cards or show decrypt popup ────────
+  // Uses shuffleTurn vs myPlayerIndex to know if this player has shuffled.
+  // shuffleTurn < players.length → shuffle phase is active
+  // myPlayerIndex < shuffleTurn → this player already shuffled (ready to decrypt)
+  // myPlayerIndex >= shuffleTurn → this player hasn't shuffled yet (wait)
+  const hasPlayerShuffled =
+    myPlayerIndex >= 0 &&
+    (shuffleTurn < 0 || // -1 means no shuffle needed (shouldn't happen during play)
+      shuffleTurn >= playersCount || // all players done shuffling
+      myPlayerIndex < shuffleTurn); // this player already shuffled
+
   useEffect(() => {
     if (!publicKey || myEncryptedCards.length === 0 || myCards.length > 0)
       return;
     if (isDecryptingCards || decryptFailed) return;
     if (gameState !== "playing") return;
+
+    // Don't show popup if the decrypt popup is already showing
+    if (showDecryptPopup) return;
+
+    // This player hasn't shuffled yet — don't show decrypt popup
+    if (!hasPlayerShuffled) return;
 
     const cached = loadCachedCards(
       tableIdString,
@@ -1612,8 +1647,8 @@ export function useTable(tableIdString: string) {
     if (cached) {
       setMyCards(cached);
     } else {
-      // Not in cache — trigger decryption
-      decryptMyCards();
+      // Show the decrypt popup — player must manually trigger decryption
+      setShowDecryptPopup(true);
     }
   }, [
     publicKey,
@@ -1623,7 +1658,8 @@ export function useTable(tableIdString: string) {
     gameState,
     isDecryptingCards,
     decryptFailed,
-    decryptMyCards,
+    hasPlayerShuffled,
+    showDecryptPopup,
   ]);
 
   return {
@@ -1656,6 +1692,10 @@ export function useTable(tableIdString: string) {
     decryptMyCards,
     isDecryptingCards,
     decryptFailed,
+
+    // Decrypt popup
+    showDecryptPopup,
+    setShowDecryptPopup,
 
     // Actions
     joinTable,

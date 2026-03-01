@@ -940,3 +940,129 @@
 .ws-reconnecting {
   animation: ws-reconnect-pulse 1.5s ease-in-out infinite;
 }
+
+/* ════════════════════════════════════════════════════════════════
+   CARD FLY TO CENTER ANIMATION
+   Cards fly from a player's seat position to the table center
+   ════════════════════════════════════════════════════════════════ */
+
+/* The card element starts at the player seat (via inline top/left).
+   We animate it to the center of the container (50%, 50%).
+   Since the element already has translate(-50%,-50%), we use
+   a fixed endpoint of top:50% left:50% via CSS custom properties
+   won't work here, so we animate transform instead. */
+@keyframes card-fly-to-center {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(0.6);
+  }
+  15% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.1);
+  }
+  /* Move to center — we use a fixed point via top/left override */
+  100% {
+    opacity: 0.6;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0.7) rotate(5deg);
+  }
+}
+
+/* Player name label fades up and out */
+@keyframes card-fly-label {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.5);
+  }
+  20% {
+    opacity: 1;
+    transform: translate(-50%, -70%) scale(1);
+  }
+  70% {
+    opacity: 1;
+    transform: translate(-50%, -80%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -100%) scale(0.8);
+  }
+}
+
+/* Impact flash when cards reach the center of the table */
+@keyframes card-land-flash {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.3);
+  }
+  30% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.2);
+  }
+  60% {
+    opacity: 0.6;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.5);
+  }
+}
+
+/* ── Revolver Cylinder ──────────────────────────────────────── */
+@keyframes cylinder-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.revolver-cylinder {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #1a1a1a 30%, #0d0d0d 70%);
+  border: 2px solid #333;
+  box-shadow: inset 0 0 8px #000, 0 0 6px #00000080;
+  flex-shrink: 0;
+}
+
+.revolver-cylinder-inner {
+  position: absolute;
+  inset: 0;
+  animation: cylinder-spin 8s linear infinite;
+}
+
+.revolver-chamber {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  top: 50%;
+  left: 50%;
+  transform-origin: 0 0;
+}
+
+.revolver-chamber-live {
+  background: radial-gradient(circle at 40% 40%, #fcd34d, #b45309);
+  border: 1px solid #f59e0b;
+  box-shadow: 0 0 5px #fbbf24aa, inset 0 0 2px #fde68a;
+}
+
+.revolver-chamber-empty {
+  background: radial-gradient(circle, #222 40%, #111 70%);
+  border: 1px solid #333;
+  box-shadow: inset 0 0 3px #000;
+}
+
+.revolver-hub {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 40%, #555, #222);
+  border: 1px solid #444;
+  z-index: 2;
+}
